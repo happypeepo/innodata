@@ -44,7 +44,7 @@ context/    # handoff notes and decisions
 
 ## Quickstart
 
-_TBD once the idea is locked._ Target:
+_TBD: lands once `Makefile` exists (see AGENTS.md)._ Target:
 
 ```bash
 make all SEED=42 N=200
