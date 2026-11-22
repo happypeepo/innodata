@@ -1,95 +1,178 @@
 # AGENTS.md — Team, ownership and working rules
 
 > Read this first, whether you're a person or a coding agent (Claude Code, Codex, Gemini CLI, Cursor).
-> **Placeholder version.** Names, the idea and the specifics get filled in once the idea is finalised (see `context/handoff.md`). The **contracts and rules below hold whichever idea we pick.**
+> **Project (locked):** *RoboSpatial-Synth*, a benchmark of synthetic tabletop manipulation scenes with spatial questions, used to evaluate Gemini Robotics-ER 2 against general frontier VLMs. Background and rationale: `context/handoff.md`.
+
+## The one-paragraph pitch
+
+A robot arm looking at a cluttered table has to answer "which thing, where, and can I grab it?" before it moves. We render cluttered tabletop scenes procedurally in PyBullet, so we know every object's mask, depth, pose and support/occlusion relationships. From that scene data we generate questions with **reference answers derived from simulator state, never from a model**, and score model answers with deterministic geometric checks.
 
 ## Team & ownership
 
-| Role | Owner | GitHub | Owns (only you edit these) | Delivers |
-|---|---|---|---|---|
-| **A — Generator** | `<NAME_A>` | `@<handle_a>` | `gen/` | Images + `scene.json` per sample (ground-truth scene data) |
-| **B — Tasks & Validation** | `<NAME_B>` | `@<handle_b>` | `tasks/`, `validate/` | Questions + reference answers + independent validator |
-| **C — Eval Harness** | `<NAME_C>` | `@<handle_c>` | `eval/` | Model runners, response parsing, scorer |
-| **D — Analysis & Story** | `<NAME_D>` | `@<handle_d>` | `report/`, `docs/`, `README.md` | Findings, charts, limitations, demo, pitch |
+Roster: `@happypeepo`, `@Dhruvk2004`, `@hritz23`, `@Raj-Shah19`. **Claim a role by putting your name in the table and pushing.**
 
-Shared (edit by PR, ping the owner): `fixtures/`, `schema/`, `Makefile`, `context/`.
+| Role | Owner | Owns (only you edit these) | Delivers |
+|---|---|---|---|
+| **A — Scene Generator** | `<NAME_A>` | `gen/` | Rendered images + masks + depth + `scene.json` per scene |
+| **B — Tasks & Validation** | `<NAME_B>` | `tasks/`, `validate/`, `schema/`, `fixtures/` | Question templates, reference answers, checkers, validation evidence |
+| **C — Eval Harness** | `<NAME_C>` | `eval/` | Model runners, prompt formats, response parsing, scoring, cost log |
+| **D — Analysis & Story** | `<NAME_D>` | `report/`, `docs/`, `README.md` | Breakdowns, charts, failure gallery, demo, write-up, pitch |
 
-## Why nobody gets blocked
+Shared (edit by PR, tag the owner): `Makefile`, `requirements.txt`, `context/`.
 
-Everyone codes against **the contracts below plus the fixtures**, never against someone else's unfinished code.
+## Locked technical decisions
 
-- **Day 0 (first ~1 hr):** someone (whoever's free, default B) commits `schema/` and `fixtures/` with **5 hand-made samples** that follow the contracts. After that, all four streams run in parallel.
-- A works on real generation and writes into `data/`. Until A is done, B, C and D read from `fixtures/`.
-- B writes templates and validators against `fixtures/scene.json`.
-- C builds runners and the scorer against `fixtures/tasks.jsonl`, using a **mock model** (`--model mock`) so no API key is needed to develop.
-- D builds the report against `fixtures/results.jsonl` (fake results are fine) so charts exist before real numbers do.
-- Swap fixtures → real data with one flag: `--data fixtures/` → `--data data/`.
+| Topic | Decision | Why |
+|---|---|---|
+| Renderer | **PyBullet** (`pip install pybullet`), headless `getCameraImage` | Gives RGB, depth and per-object segmentation masks for free. Physics settles objects realistically and powers the counterfactual tasks. No GPU needed. |
+| Objects | Primitives (box, cylinder, sphere) + meshes shipped in `pybullet_data`. YCB optional later. | Zero asset wrangling on day 1 |
+| Image size | 1024×768 PNG | Large enough for small objects, cheap enough per call |
+| Coordinates (storage) | **Pixels**, origin top-left, `[x, y]` | One source of truth |
+| Coordinates (model I/O) | Ask models for **`[y, x]` normalised to 0–1000** (the ER-native format). C converts back to pixels before scoring. | Fair to ER 2, easy to ask of the others |
+| Language | Python 3.11 | |
+| Primary model | `gemini-robotics-er-2-preview` | |
+| Comparison models | 2–3 general VLMs we have keys for (decide in handoff) + text-only baseline | |
 
-**Changing a contract:** open a PR that edits `schema/` + `fixtures/` together, tag all owners, and keep it backward compatible (new fields are optional). Don't rename or remove fields without agreement in the handoff log.
+## Task families (B owns these; A must supply the data each one needs)
 
-## Contracts (v0)
+| # | Family | Example question | `answer_type` | Checker | Needs from A |
+|---|---|---|---|---|---|
+| F1 | Referring pointing | "Point to the red cylinder left of the blue box." | `point` | `point_in_mask` | masks, colours, 2D positions |
+| F2 | Referring detection | "Draw a box around the smallest green object." | `bbox` | `iou>=0.5` | bboxes |
+| F3 | Counting under occlusion | "How many spheres are on the table?" | `count` | exact | `visible_frac` per object |
+| F4 | 3D spatial relations | "Is the mug in front of or behind the bowl?" | `choice` | exact | depth / 3D poses |
+| F5 | Support & stacking | "What is the yellow box resting on?" | `choice` | exact | contact graph from physics |
+| F6 | Graspability / free-to-pick | "Point to an object you can pick up without moving anything else." | `point` (any valid) | `point_in_any_mask` | contact + occlusion graph |
+| F7 | Clearing order | "List the objects in an order that clears the stack safely." | `sequence` | valid topological order | support graph |
+| F8 | Counterfactual | "If the blue box is removed, which objects move?" | `set` | set-F1 ≥ threshold, exact for headline | **physics rerun** with the object deleted |
+| F9 | Placement success (from Idea 3) | "Goal: red cube on the plate. Did it succeed?" | `bool` | exact | goal spec + final pose |
+| F10 | Before/after change (from Idea 3) | Two images: "Which object moved?" | `choice` | exact | paired renders, same camera |
 
-### 1. `scene.json` (A → B), one per image
+**Difficulty knobs** (A exposes them, B records them on every task, D slices by them): `n_objects` (3–20), `occlusion` (max hidden fraction), `distractors` (same colour or same shape as the target), `camera` (elevation/azimuth), `lighting`, `scale_range`.
+
+**Validity rules** (B enforces them, the validator rejects tasks that break them):
+- The target must be ≥ 30% visible (`visible_frac`) unless the question is explicitly about occlusion (F3).
+- Referring expressions must have **exactly one** match in the scene (uniqueness check).
+- Relation answers (F4) need a margin: depth difference ≥ 3 cm, otherwise drop the task as ambiguous.
+- F8/F9 labels come from re-simulating, not from heuristics.
+
+## Contracts (v1). Code against these, not against each other
+
+### 1. `scene.json` (A → B), one per scene, in `data/scenes/`
 ```json
 {
-  "scene_id": "s_000123",
-  "seed": 123,
+  "scene_id": "s_000123", "seed": 123, "generator_version": "gen@<git-sha>",
   "image_path": "data/images/s_000123.png",
+  "depth_path": "data/depth/s_000123.npy",
+  "seg_path": "data/seg/s_000123.png",
   "width": 1024, "height": 768,
-  "camera": {"intrinsics": [[...]], "extrinsics": [[...]]},
+  "camera": {"view_matrix": [16 floats], "proj_matrix": [16 floats], "elevation_deg": 45, "azimuth_deg": 30},
   "objects": [
-    {"id": "o1", "category": "<cat>", "attributes": {"color": "red"},
-     "bbox_2d": [x0, y0, x1, y1], "mask_path": "data/masks/s_000123_o1.png",
-     "pose_3d": {"xyz": [0,0,0], "rpy": [0,0,0]}, "visible_frac": 0.82}
+    {"id": "o1", "seg_id": 3, "shape": "cylinder", "color": "red", "size_cm": [6, 6, 10],
+     "pose": {"xyz_m": [0.1, -0.05, 0.05], "quat": [0, 0, 0, 1]},
+     "bbox_2d": [412, 300, 470, 395], "centroid_2d": [441, 350],
+     "pixel_area": 4210, "visible_frac": 0.82, "depth_mean_m": 0.71}
   ],
-  "relations": [{"subj": "o1", "rel": "left_of", "obj": "o2"}],
-  "difficulty": {"occlusion": 0.3, "clutter": 7, "lighting": "low"},
-  "generator_version": "gen@<git-sha>"
+  "contacts": [{"top": "o1", "bottom": "table"}, {"top": "o4", "bottom": "o1"}],
+  "occludes": [{"front": "o2", "back": "o1", "frac": 0.18}],
+  "counterfactuals": {"o1": {"moved": ["o4"]}},
+  "pair": null,
+  "difficulty": {"n_objects": 9, "occlusion": 0.35, "distractors": 2, "lighting": "dim"}
 }
 ```
+- `seg_path` is a PNG where pixel value = `seg_id`. Masks derive from it, so there's no per-object mask file.
+- `counterfactuals` is filled only for objects that support something (cost control).
+- `pair` is set for F10 scenes: `{"before": "s_000123a", "after": "s_000123b", "moved": ["o3"]}`.
+- F9 scenes add `"goal": {"object": "o2", "relation": "on", "target": "o7", "success": true}`.
 
-### 2. `tasks.jsonl` (B → C), one task per line
+### 2. `tasks.jsonl` (B → C), one task per line, in `data/tasks.jsonl`
 ```json
 {
-  "task_id": "t_000123_03",
-  "scene_id": "s_000123",
-  "image_path": "data/images/s_000123.png",
-  "family": "<task_family>",
-  "question": "Point to the object that is directly behind the blue mug.",
-  "answer_type": "point | bbox | count | choice | number | bool | sequence",
-  "reference": {"value": "...", "tolerance": null},
+  "task_id": "t_000123_F1_02", "scene_id": "s_000123", "family": "F1",
+  "images": ["data/images/s_000123.png"],
+  "question": "Point to the red cylinder left of the blue box.",
+  "answer_type": "point",
+  "answer_format": "Return JSON: {\"point\": [y, x]} with y, x normalised 0-1000.",
+  "reference": {"seg_ids": [3]},
   "checker": "point_in_mask",
-  "evidence": ["o4"],
-  "validated": {"programmatic": true, "human_spot_check": null},
-  "difficulty": {"occlusion": 0.3, "distractors": 2}
+  "evidence": ["o1", "o5"],
+  "validated": {"unique_referent": true, "min_visible": 0.82, "margin_ok": true, "human": null},
+  "difficulty": {"n_objects": 9, "occlusion": 0.35, "distractors": 2}
 }
+```
+`answer_type` ∈ `point | bbox | count | choice | bool | sequence | set`.
+
+### 3. Checker API (B implements in `validate/checkers.py`, C imports it)
+```python
+def score(task: dict, parsed: dict, scene: dict) -> float:  # 0.0..1.0, coords already in pixels
+```
+Until B ships it, C uses `eval/checkers_stub.py` with the same signature (exact-match only) and switches to the real one with a one-line import change.
+
+### 4. `results.jsonl` (C → D), one row per (task, model, run), in `data/results/<model>.jsonl`
+```json
+{"task_id": "t_000123_F1_02", "model": "gemini-robotics-er-2-preview", "run": 0,
+ "condition": "image | text_only", "raw_response": "...", "parsed": {"point": [350, 441]},
+ "parse_ok": true, "score": 1.0, "latency_ms": 1820,
+ "tokens_in": 1200, "tokens_out": 40, "cost_usd": 0.0012, "error": null}
 ```
 
-### 3. `results.jsonl` (C → D), one row per (task, model, run)
-```json
-{
-  "task_id": "t_000123_03", "model": "gemini-robotics-er-2-preview",
-  "run": 0, "raw_response": "...", "parsed": {...},
-  "correct": true, "score": 1.0, "latency_ms": 1820,
-  "tokens_in": 1200, "tokens_out": 40, "cost_usd": 0.0012,
-  "error": null
-}
-```
+## Work split
+
+Every role can start at hour 0. Only one sync point: **B commits `schema/` + `fixtures/` (3 hand-made scenes + ~15 tasks + fake results) within the first hour.** Until then A, C and D read the contract above.
+
+### A — Scene Generator (`gen/`)
+- [ ] `gen/scene.py`: PyBullet table + random objects, drop and settle physics, render RGB/depth/seg at the chosen camera.
+- [ ] Compute per object: bbox, centroid, pixel area, `visible_frac` (render each object alone vs. in the full scene), mean depth.
+- [ ] Contact graph from `getContactPoints` after settling. Occlusion pairs from the seg comparison.
+- [ ] Counterfactuals: for each supporting object, reload, delete it, step the sim, record what moved > 2 cm.
+- [ ] F9 goal scenes (scripted placement that succeeds or fails) and F10 paired renders (move 1 object, re-render with the same camera).
+- [ ] Difficulty knobs as CLI flags. `python -m gen --seed 0 --n 300 --out data/`.
+- [ ] Self-check: the seg ids in the PNG match `objects[].seg_id`. Visual contact-sheet of 20 scenes for eyeballing.
+- **Done when:** 300+ scenes are generated deterministically from a seed in under ~15 min on a laptop.
+
+### B — Tasks & Validation (`tasks/`, `validate/`, `schema/`, `fixtures/`)
+- [ ] **Hour 0:** `schema/*.json` (JSON Schema for the 3 contracts) + `fixtures/`.
+- [ ] `tasks/templates.py`: a generator per family F1–F10 that reads `scene.json` and emits tasks. Varied phrasings (≥3 templates per family).
+- [ ] Referring-expression builder (colour / shape / size / relative position) with a uniqueness check.
+- [ ] `validate/checkers.py`: `point_in_mask`, `point_in_any_mask`, `bbox_iou`, `exact`, `topo_order_valid`, `set_f1`.
+- [ ] `validate/independent.py`: **re-derives answers from the raw seg/depth arrays without reading A's `contacts`/`relations`** and flags any disagreement. This is our "verified independently" evidence.
+- [ ] Human spot-check: a tiny script that shows 50 random tasks with the image and reference overlaid and records agree/disagree → reference error rate.
+- [ ] Balance: cap tasks per family, balance yes/no and choice answers so a majority baseline gets ≈ chance.
+- **Done when:** `python -m tasks --data data/` gives ~1,000 validated tasks plus `data/validation_report.json` (rejection counts by reason, independent-check agreement %, human-check agreement %).
+
+### C — Eval Harness (`eval/`)
+- [ ] `eval/models/`: one adapter per model with the same interface `ask(images, prompt) -> raw_text`. Add `mock` first (returns random valid answers) so nothing waits on keys.
+- [ ] Prompt builder per `answer_type`, using the `answer_format` string. Same prompt for every model.
+- [ ] Robust parser (JSON extraction, `[y,x]`/0–1000 → pixels, tolerate prose). Log `parse_ok`; a parse failure scores 0 but is reported separately.
+- [ ] Response cache keyed on (model, task_id, prompt hash), so reruns cost nothing.
+- [ ] Conditions: `image` (main) and `text_only` (no image, proves the questions need vision). Random/majority baselines computed offline.
+- [ ] 3 repeat runs on a 100-task subset for variance. Temperature 0 where supported.
+- [ ] Cost and latency tracking. Stop and post in handoff at 70% of budget.
+- **Done when:** `python -m eval --model <name> --tasks data/tasks.jsonl` resumes safely and writes `results.jsonl`.
+
+### D — Analysis & Story (`report/`, `docs/`, `README.md`)
+- [ ] `report/analyze.py`: accuracy by model × family, and by model × each difficulty knob (curves). Bootstrap 95% CIs. Image vs. text-only gap.
+- [ ] Failure gallery: images with the model's point/box drawn next to the reference, grouped by failure type (wrong referent, off-object, relation flip, hallucinated count).
+- [ ] `docs/application.md`: robot picking use case, why each error type matters physically, how scoring separates right from wrong.
+- [ ] `docs/limitations.md`: sim-to-real gap, primitive objects, template language, small N, budget limits.
+- [ ] Demo: Streamlit/Gradio page. Pick a seed → render a scene → ask → show each model's answer overlaid with ✓/✗.
+- [ ] Pitch slides / talk track (5 criteria → 5 sections). Keep README current.
+- **Done when:** `python -m report --results data/results/` builds `report/out/` (charts + HTML/MD summary) from fixtures *and* from real data.
 
 ## Working rules
 
-1. **Branches:** `<role>/<short-desc>` (e.g. `gen/occlusion-knob`). Small PRs into `main`. Merge your own PR into your own folder; anything shared needs one approval.
-2. **No breaking `main`.** `make smoke` (fixtures → mock eval → report) must pass before you merge.
+1. **Branches:** `<role>/<short-desc>` (e.g. `gen/counterfactuals`). Small PRs into `main`. You may merge your own PR inside your own folders. Shared files need one approval.
+2. **`make smoke` must pass before merging:** fixtures → tasks → mock eval → report.
 3. **Determinism:** everything takes `--seed`. Same seed, same dataset.
-4. **Ground truth comes from generator state, never from a model.** No model output may ever be written into `reference`.
+4. **Ground truth comes from simulator state, never from a model.** No model output may ever be written into `reference`.
 5. **Secrets:** API keys live in `.env` (gitignored). Never commit keys, never paste them in issues/PRs.
-6. **Cost:** log every API call's tokens and cost to `results.jsonl`. Check the budget in `context/handoff.md` before big runs.
-7. **Generated data** (`data/`) is gitignored. Commit the code and seed, not the images. A small `fixtures/` set is committed.
-8. **Async updates:** at the end of each work block, add 2–3 lines to the log in `context/handoff.md` (done / next / blocked-on). Read it before you start.
+6. **Generated data** (`data/`) is gitignored. Commit code + seeds + `fixtures/` only.
+7. **Contract changes:** a PR that edits `schema/` + `fixtures/` + this file together, tag all owners, additive only (new optional fields). Log it in the handoff Decisions table.
+8. **Async updates:** at the end of each work block, append one line to the log in `context/handoff.md` (done / next / blocked-on). Read it before you start.
 
 ## For coding agents
 
-- Stay inside your owner's folders unless the task says otherwise.
-- Read `context/handoff.md` before acting. It holds the current decisions.
+- Stay inside your role's folders unless the task says otherwise.
+- Read `context/handoff.md` before acting. It holds the current decisions and log.
 - Run `make smoke` before proposing a commit.
-- Don't invent ground truth or "fix" references by asking a model.
+- Never create or "fix" reference answers by asking a model.

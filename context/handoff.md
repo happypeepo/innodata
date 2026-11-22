@@ -4,9 +4,9 @@
 
 ## Current state
 
-- **Phase:** idea selection (not finalised)
-- **Repo:** scaffolding only (README, AGENTS.md, this file)
-- **Next decision:** pick one idea below → fill in names/roles in `AGENTS.md` → commit `schema/` + `fixtures/`
+- **Phase:** build. **Idea 1 (Tabletop manipulation spatial QA) is locked**, with F9/F10 borrowed from Idea 3.
+- **Repo:** scaffolding + full work split in `AGENTS.md`
+- **Next:** everyone claims a role in `AGENTS.md` → B commits `schema/` + `fixtures/` (hour 0) → all four streams run in parallel
 
 ---
 
@@ -30,7 +30,7 @@ Sources: [Google blog](https://blog.google/innovation-and-ai/models-and-research
 
 All three use **procedural generation**, so ground truth comes free from the generator's own scene data and never from a model.
 
-### Idea 1 — Tabletop manipulation spatial QA ("RoboSpatial-Synth") ⭐ recommended
+### Idea 1 — Tabletop manipulation spatial QA ("RoboSpatial-Synth") ✅ CHOSEN
 
 **Application:** a robot arm deciding *what* to grab and *where* on a cluttered table (warehouse picking, kitchen, lab automation).
 **Why errors matter:** point at the wrong object and the robot grabs the wrong item. Misjudge "behind/under" and it knocks things over. Say "graspable" when an object is occluded and the grasp fails or damages the item.
@@ -110,13 +110,14 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 | Date | Decision | By | Why |
 |---|---|---|---|
 | 2026-11-22 | Repo scaffolded; 3 ideas shortlisted | `<name>` | Kickoff |
+| 2026-11-22 | **Idea 1 chosen** + F9/F10 from Idea 3. Idea 2 stays the fallback. | team | Best variation + geometric validation; plays to ER 2 pointing |
+| 2026-11-22 | Renderer = PyBullet. Model I/O in ER-native `[y,x]` 0–1000, stored in pixels. | team | Free masks/depth/physics, no GPU; fair to ER 2 |
 
 ## Open questions
 
-- Which idea? (vote here: `<name>: 1/2/3`)
-- Which renderer: PyBullet vs. BlenderProc vs. MuJoCo?
-- Which comparison models do we have API access to?
-- Who owns which role?
+- Which comparison models do we have API access to? (list keys/accounts here)
+- Who owns which role? (claim in `AGENTS.md`)
+- API budget amount?
 
 ## Log (append newest at the bottom)
 

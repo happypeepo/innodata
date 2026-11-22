@@ -1,6 +1,8 @@
-# innodata — Synthetic Visual-Understanding Benchmark
+# innodata — RoboSpatial-Synth
 
-> **Status:** idea not finalised. See [`context/handoff.md`](context/handoff.md) for the shortlisted ideas and [`AGENTS.md`](AGENTS.md) for who owns what.
+> **RoboSpatial-Synth:** procedurally rendered tabletop manipulation scenes with spatial questions (pointing, counting under occlusion, 3D relations, support, graspability, clearing order, counterfactuals, placement success) whose answers come from simulator state. Used to evaluate Gemini Robotics-ER 2 against general frontier VLMs.
+>
+> **Status:** build phase. Work split and contracts: [`AGENTS.md`](AGENTS.md). Decisions and log: [`context/handoff.md`](context/handoff.md).
 
 ## What we're building
 
@@ -29,12 +31,14 @@ Pick an image family and a visual-understanding problem with real practical impa
 ## Repo layout (planned)
 
 ```
-gen/        # Owner A — scene + image generation
-tasks/      # Owner B — question templates + reference answers
-validate/   # Owner B — independent answer checks
-eval/       # Owner C — model runners + scoring
-report/     # Owner D — analysis, charts, demo
-fixtures/   # shared sample data so everyone can work without waiting
+gen/        # A — PyBullet scene generation (RGB, depth, seg, scene.json)
+tasks/      # B — question templates F1–F10 + reference answers
+validate/   # B — checkers + independent re-derivation + human spot-check
+eval/       # C — model adapters, parsing, scoring, cost log
+report/     # D — breakdowns, failure gallery, demo
+schema/     # B — JSON Schemas for the contracts
+fixtures/   # B — hand-made samples so nobody waits
+docs/       # D — application, limitations
 context/    # handoff notes and decisions
 ```
 
