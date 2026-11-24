@@ -158,16 +158,19 @@ Tell Dhruv the first three: he reads your files and will be affected.
 
 [AGENTS: "Contact graph from `getContactPoints` after settling. Occlusion pairs from the seg comparison."]
 
-- [ ] **4.1 Contacts.** For every pair of bodies (objects plus the table), call `p.getContactPoints(bodyA=a, bodyB=b)`. If they touch, decide which is on top and append `{"top": ..., "bottom": ...}`, with the table as `"table"`. [AGENTS]
+- [x] **4.1 Contacts.** For every pair of bodies (objects plus the table), call `p.getContactPoints(bodyA=a, bodyB=b)`. If they touch, decide which is on top and append `{"top": ..., "bottom": ...}`, with the table as `"table"`. [AGENTS]
   - Rule for top/bottom: [decide]. Comparing centre heights is simplest. The contact normal (index 7 of each contact tuple) is more robust for tall or tipped objects.
   - Done when: in a scene you build by hand, with box B dropped onto box A, you get `{"top": B, "bottom": A}` and `{"top": A, "bottom": "table"}`.
+  - Result: rule = averaged contact normal with \|n_z\| ≥ 0.3 (Decisions table). The stack gives exactly those two entries. Two boxes pressed face to face (4 contact points, horizontal normal) get no support entry between them. A box leaning ~30° on a cube's edge gives `{lean, cube}` plus `{lean, table}`. Over 147 objects in 10 random scenes, every object has a support entry. Contacts are read before the render-alone pass.
 
-- [ ] **4.2 Occlusion.** For each object, look at the full-scene seg pixels under its alone-mask (from 3.4). Every other object id found there is in front of it. Use `frac = those pixels ÷ alone pixels` and append `{"front": ..., "back": ..., "frac": ...}`. [AGENTS]
+- [x] **4.2 Occlusion.** For each object, look at the full-scene seg pixels under its alone-mask (from 3.4). Every other object id found there is in front of it. Use `frac = those pixels ÷ alone pixels` and append `{"front": ..., "back": ..., "frac": ...}`. [AGENTS]
   - Done when: in a scene you build by hand, with one object placed between the camera and another, you get one entry with a sensible `frac`.
+  - Result: a sphere partly behind a box gives one entry, `{front: box, back: sphere, frac: 0.622}`, and the sphere's `visible_frac` is 0.378. Pairs below 1% are dropped (Decisions table).
 
-- [ ] **4.3 Add `contacts` and `occludes`** to `scene.json`.
+- [x] **4.3 Add `contacts` and `occludes`** to `scene.json`.
 
 - [ ] **4.4 Hand off.** Commit, add a log line, tell Dhruv. This unblocks F5, F6 and F7. [AGENTS]
+  - Status: committed and log line added. **Still to do:** push, then tell Dhruv.
 
 ---
 

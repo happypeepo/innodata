@@ -42,6 +42,10 @@ STILL_ANG_RADPS = 0.01
 STILL_STEPS = 24  # must hold for 0.1 s, so a bounce apex or the spawn instant doesn't count
 MAX_SETTLE_STEPS = 2400
 
+# Support: averaged contact normal within ~72 degrees of vertical. Occlusion: at least 1% hidden.
+SUPPORT_MIN_NZ = 0.3
+OCCLUSION_MIN_FRAC = 0.01
+
 SEG_BACKGROUND = 0
 SEG_TABLE = 1
 SEG_FIRST_OBJECT = 2
@@ -267,6 +271,53 @@ def render_alone_masks(client: int, objects: list[SceneObject], view, proj) -> d
     return masks
 
 
+def contact_graph(client: int, table_id: int, objects: list[SceneObject]) -> list[dict]:
+    """Support pairs from the contacts of the last simulation step.
+
+    The pair's averaged contact normal decides: within ~72 degrees of vertical (|n_z| >= 0.3), the
+    upper body is "top", so a box leaning on another counts as supported by it; flatter
+    (side-by-side) contacts are skipped. The table is named "table".
+    """
+    names = {o.body: o.id for o in objects}
+    names[table_id] = "table"
+    bodies = [o.body for o in objects]
+    pairs = []
+    for i, a in enumerate(bodies):
+        pairs.append((a, table_id))
+        pairs.extend((a, b) for b in bodies[i + 1:])
+    contacts = []
+    for a, b in pairs:
+        points = p.getContactPoints(bodyA=a, bodyB=b, physicsClientId=client)
+        if not points:
+            continue
+        normal = np.mean([pt[7] for pt in points], axis=0)  # contactNormalOnB points from b toward a
+        nz = normal[2] / np.linalg.norm(normal)
+        if nz >= SUPPORT_MIN_NZ:
+            contacts.append({"top": names[a], "bottom": names[b]})
+        elif nz <= -SUPPORT_MIN_NZ:
+            contacts.append({"top": names[b], "bottom": names[a]})
+    return contacts
+
+
+def occlusion_pairs(seg: np.ndarray, objects: list[SceneObject], alone: dict[int, np.ndarray]) -> list[dict]:
+    """Which objects hide part of which, from the full-scene seg under each object's alone-mask."""
+    by_seg = {o.seg_id: o.id for o in objects}
+    occludes = []
+    for back in objects:
+        alone_mask = alone[back.body]
+        alone_px = int(alone_mask.sum())
+        if alone_px == 0:
+            continue
+        values, counts = np.unique(seg[alone_mask], return_counts=True)
+        for value, count in zip(values.tolist(), counts.tolist()):
+            if value == back.seg_id or value not in by_seg:
+                continue
+            frac = count / alone_px
+            if frac >= OCCLUSION_MIN_FRAC:
+                occludes.append({"front": by_seg[value], "back": back.id, "frac": round(frac, 3)})
+    return occludes
+
+
 def git_version() -> str:
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
@@ -306,6 +357,7 @@ def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObj
     view, proj = camera_matrices(top_z, elevation_deg, azimuth_deg)
     rgb, depth, seg_raw = render(client, view, proj)
     seg = remap_seg(seg_raw, table_id, objects)
+    contacts = contact_graph(client, table_id, objects)  # before render_alone_masks moves bodies around
     alone = render_alone_masks(client, objects, view, proj)
 
     rel = {
@@ -339,6 +391,8 @@ def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObj
         "camera": {"view_matrix": view, "proj_matrix": proj,
                    "elevation_deg": elevation_deg, "azimuth_deg": azimuth_deg},
         "objects": scene_objects,
+        "contacts": contacts,
+        "occludes": occlusion_pairs(seg, objects, alone),
     }
     (out / f"scenes/{scene_id}.json").write_text(json.dumps(scene, indent=2) + "\n")
     return scene
