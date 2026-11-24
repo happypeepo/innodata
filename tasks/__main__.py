@@ -27,14 +27,16 @@ def generate(data_dir, seed: int = 0, families=None):
     families = families or list(FAMILIES)
     tasks, rejects = [], Counter()
     counters = Counter()
-    for scene in load_scenes(data_dir):
+    scenes = load_scenes(data_dir)
+    ctx = {"scenes": {s["scene_id"]: s for s in scenes}}
+    for scene in scenes:
         rng = Random(f"{seed}:{scene['scene_id']}")
         pair = scene.get("pair")
         is_after = bool(pair) and scene["scene_id"] == pair["after"]
         for fam in families:
             if is_after and fam != "F10":  # the after-image of a pair would only repeat the before-image tasks
                 continue
-            for t in FAMILIES[fam](scene, rng, rejects):
+            for t in FAMILIES[fam](scene, rng, rejects, ctx):
                 num = scene["scene_id"][2:8]
                 counters[(num, fam)] += 1
                 t["task_id"] = f"t_{num}_{fam}_{counters[(num, fam)]:02d}"

@@ -1,4 +1,4 @@
-"""Tests for the task pipeline (phase 3: F1, F2, F4, F9).
+"""Tests for the task pipeline (phase 3 core; phase 4 families are in test_families.py).
 
 Run from the repo root:  python -m pytest tasks/tests validate/tests
 """
@@ -135,7 +135,7 @@ def test_generated_tasks_are_schema_valid_and_consistent(generated):
         assert not list(v.iter_errors(t)), t["task_id"]
         assert check_task(t, scenes, FIXTURES, t["task_id"]) == []
     assert len({t["task_id"] for t in generated}) == len(generated)
-    assert {t["family"] for t in generated} == {"F1", "F2", "F4", "F9"}
+    assert {t["family"] for t in generated} == {f"F{i}" for i in range(1, 11)}
 
 
 def test_reference_answers_score_one(generated):
@@ -153,11 +153,14 @@ def test_reference_answers_score_one(generated):
 
 def test_targets_meet_visibility_rule(generated):
     for t in generated:
-        assert t["validated"]["min_visible"] >= 0.30
+        if t["family"] != "F3":  # F3 is exempt (AGENTS.md); it uses the 0.10 counting rule instead
+            assert t["validated"]["min_visible"] >= 0.30, t["task_id"]
 
 
 def test_no_tasks_from_after_image_of_a_pair(generated):
     assert not any(t["scene_id"] == "s_000004b" for t in generated)
+    (f10,) = [t for t in generated if t["family"] == "F10"]
+    assert f10["scene_id"] == "s_000004a" and f10["images"] == ["images/s_000004a.png", "images/s_000004b.png"]
 
 
 def test_same_seed_same_tasks_different_seed_differs():
