@@ -112,6 +112,15 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 | 2026-11-22 | Repo scaffolded; 3 ideas shortlisted | `<name>` | Kickoff |
 | 2026-11-22 | **Idea 1 chosen** + F9/F10 from Idea 3. Idea 2 stays the fallback. | team | Best variation + geometric validation; plays to ER 2 pointing |
 | 2026-11-22 | Renderer = PyBullet. Model I/O in ER-native `[y,x]` 0–1000, stored in pixels. | team | Free masks/depth/physics, no GPU; fair to ER 2 |
+| 2026-11-24 | **Seg PNG:** 8-bit grayscale. `0` = nothing and the floor plane; table and objects get remapped ids (next row). | Raj (A), Dhruv (B) | ≤20 objects fit in 8 bits; B's point checker scores a `0` pixel as a miss |
+| 2026-11-24 | **Table:** not in `objects[]`; fixed seg value `1`; objects get `seg_id` 2, 3, …; `contacts` use `"table"`. | Raj (A), Dhruv (B) | B's generators only loop over `objects[]`, so the table is never a target; F5 can still answer "table" |
+| 2026-11-24 | **Colours:** exactly 6 names, each one fixed RGB: red, green, blue, yellow, orange, purple. | Raj (A), Dhruv (B) | Far-apart hues keep referring expressions unambiguous; B's schema allows only these. Check yellow/orange contrast on the wooden table in renders |
+| 2026-11-24 | **Shapes/sizes:** box (sides 4–10 cm each), cylinder (Ø 4–8 cm, height 5–15 cm), sphere (Ø 4–8 cm); uniform draws from the seeded rng; no meshes. | Raj (A), Dhruv (B) | Fits the colour + shape naming scheme; B uses size words only when the gap is clearly visible |
+| 2026-11-24 | **Fallen/hidden objects:** objects that fall off the table are removed before rendering. Fully hidden objects stay in `objects[]` with `visible_frac: 0`, `pixel_area: 0`, and `null` for `bbox_2d`, `centroid_2d`, `depth_mean_m`. | Raj (A), Dhruv (B) | Keeps the physical scene intact for contacts/occlusion; B's schema accepts the nulls and B skips these objects as targets |
+| 2026-11-24 | **Camera:** looks at the table-top centre `(0, 0, 0.625)` from 0.9 m, vertical FOV 50°, near 0.05 m, far 3.0 m. Objects spawn in a 0.6 × 0.4 m area centred on the table. `elevation_deg` = downward pitch, `azimuth_deg` = yaw about +z (default 45°/30°, as in the AGENTS example). | Raj (A) | All spawn-area corners in frame at 1024×768; a 5 cm cube is ~55–90 px wide |
+| 2026-11-24 | **Settling:** still = every object < 1 mm/s linear and < 0.01 rad/s angular, checked each step at 240 Hz and held for 24 steps (0.1 s) in a row, cap 2,400 steps (10 s simulated). If the cap is hit, the scene is rendered as-is and a warning is printed. | Raj (A) | Avoids rendering objects mid-roll; bounded runtime |
+| 2026-11-24 | **Seed rule:** scene *i* (0-based) uses `seed = --seed + i`; `scene_id = s_{seed:06d}`. | Raj (A) | Matches the AGENTS example (`s_000123` ↔ 123); B's `task_id` builds on it |
+| 2026-11-24 | **Paths in `scene.json` are relative to the data folder**, e.g. `"images/s_000123.png"`, `"depth/…npy"`, `"seg/…png"` (AGENTS example shows `data/images/…`). **`AGENTS.md` still needs updating in B's contract PR** (rule 7). | Raj (A), Dhruv (B) | `--data fixtures/` and `--data data/` both resolve the same paths |
 
 ## Open questions
 
@@ -124,4 +133,5 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 ```
 [YYYY-MM-DD HH:MM] <name> (<role>): done: ... | next: ... | blocked on: ...
 [2026-11-24 12:19] Dhruvk2004 (B): done: claimed Role B in AGENTS.md; sent contract questions (parsed coord order, answer shapes, option naming, paths) to lead | next: schema/ + fixtures/ on branch schema/v1-contracts-fixtures | blocked on: none
+[2026-11-24 15:21] Raj-Shah19 (A): done: Phase 0 (py3.11 venv, pybullet), Phase 1 decisions logged above, Phase 2 one scene end to end (gen/scene.py: spawn, settle, RGB/depth/seg, scene.json job-1 fields, byte-identical per seed) | next: Phase 3 per-object facts (bbox, centroid, pixel_area, visible_frac, depth_mean_m) | blocked on: B's schema/ to validate scene.json against; AGENTS.md path example needs B's contract PR; Role A claim not pushed (no write access yet)
 ```
