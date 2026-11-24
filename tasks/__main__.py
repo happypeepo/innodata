@@ -1,8 +1,10 @@
 """Generate tasks.jsonl from scenes.
 
-    python -m tasks --data data/ --seed 0                 # writes data/tasks.jsonl
+    python -m tasks --data data/ --seed 0                 # writes data/tasks.jsonl + data/validation_report.json
     python -m tasks --data fixtures/ --out /tmp/t.jsonl   # fixtures/tasks.jsonl is hand-written, so pass --out
 
+Pipeline: generate -> validity rules (validate/rules.py) -> balance + per-family cap (validate/balance.py)
+-> schema check -> write tasks.jsonl and validation_report.json (next to the tasks file).
 Same --data and --seed always give byte-identical output (AGENTS.md rule 3).
 """
 
@@ -15,6 +17,10 @@ from pathlib import Path
 from random import Random
 
 from schema.check import load_validator, schema_errors
+
+from validate.balance import MAX_PER_FAMILY, balance
+from validate.report import build_report, write_report
+from validate.rules import check as check_rules
 
 from .io import load_scenes, write_jsonl
 from .templates import FAMILIES
@@ -51,6 +57,9 @@ def main(argv=None):
     ap.add_argument("--out", type=Path, help="output file (default: <data>/tasks.jsonl)")
     ap.add_argument("--families", default=",".join(FAMILIES),
                     help=f"comma-separated subset of {','.join(FAMILIES)}")
+    ap.add_argument("--max-per-family", type=int, default=MAX_PER_FAMILY)
+    ap.add_argument("--no-balance", action="store_true", help="skip balancing and the family cap (debugging)")
+    ap.add_argument("--report", type=Path, help="report file (default: validation_report.json next to --out)")
     args = ap.parse_args(argv)
 
     out = args.out or args.data / "tasks.jsonl"
@@ -62,20 +71,42 @@ def main(argv=None):
         ap.error(f"unknown or not-yet-implemented families: {unknown}")
 
     tasks, rejects = generate(args.data, args.seed, families)
+    scenes = {s["scene_id"]: s for s in load_scenes(args.data)}
+
+    rule_rejects, valid = Counter(), []
+    for t in tasks:
+        reasons = check_rules(t, scenes)
+        rule_rejects.update(reasons)
+        if not reasons:
+            valid.append(t)
+    if args.no_balance:
+        final, drops = valid, Counter()
+    else:
+        final, drops = balance(valid, args.seed, args.max_per_family)
 
     validator = load_validator("task")
-    errors = [e for t in tasks for e in schema_errors(validator, t, t["task_id"])]
+    errors = [e for t in final for e in schema_errors(validator, t, t["task_id"])]
     if errors:
         print("\n".join(errors), file=sys.stderr)
         print(f"FAIL: {len(errors)} schema errors, nothing written", file=sys.stderr)
         return 1
 
-    write_jsonl(out, tasks)
-    per_family = Counter(t["family"] for t in tasks)
-    print(f"{len(tasks)} tasks -> {out} (seed {args.seed})")
+    write_jsonl(out, final)
+    report = build_report(seed=args.seed, data=args.data, n_scenes=len(scenes), n_generated=len(tasks),
+                          n_invalid=len(tasks) - len(valid), rule_rejects=rule_rejects, balance_drops=drops,
+                          gen_rejects=rejects, final=final)
+    report_path = args.report or out.parent / "validation_report.json"
+    write_report(report_path, report)
+
+    per_family = Counter(t["family"] for t in final)
+    print(f"{len(final)} tasks -> {out} (seed {args.seed}); report -> {report_path}")
+    print(f"  generated {len(tasks)}, failed rules {len(tasks) - len(valid)}, dropped by balancing {sum(drops.values())}")
     print("  by family: " + ", ".join(f"{f}={per_family[f]}" for f in families))
-    if rejects:
-        print("  rejected: " + "; ".join(f"{k} x{v}" for k, v in sorted(rejects.items())))
+    if rule_rejects:
+        print("  rule failures: " + "; ".join(f"{k} x{v}" for k, v in sorted(rule_rejects.items())))
+    not_balanced = [f for f, v in report["majority_baseline"].items() if v["near_chance"] is False]
+    if not_balanced:
+        print(f"  majority baseline above chance for: {', '.join(not_balanced)} (see report)")
     return 0
 
 
