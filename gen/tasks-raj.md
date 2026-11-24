@@ -111,7 +111,7 @@ Tell Dhruv the first three: he reads your files and will be affected.
 
 - [x] **2.9 Write `scene.json` (job 1 fields).** `scene_id`, `seed`, `generator_version` (`gen@<git-sha>`), `image_path`, `depth_path`, `seg_path`, `width`, `height`, `camera` (both matrices plus elevation and azimuth), and per object `id`, `seg_id`, `shape`, `color`, `size_cm`, `pose {xyz_m, quat}`. Use the paths `data/images/`, `data/depth/`, `data/seg/` and `data/scenes/`. [AGENTS]
   - Done when: the file matches the AGENTS example's shape. Once Dhruv commits `schema/`, it must also validate against it.
-  - Result: the job-1 keys match the example's shape and order. Paths are data-relative (`images/…`), as decided. `size_cm` uses 0.1 cm steps. **Still to do: validate against `schema/` once B pushes it.**
+  - Result: the job-1 keys match the example's shape and order. Paths are data-relative (`images/…`), as decided. `size_cm` uses 0.1 cm steps. Validated: all 300 scenes from the 6.1 run pass B's `python -m schema.check` (from `origin/schema/v1-contracts-fixtures` @ 1517cec), after adding `counterfactuals: {}` and `pair: null` (Decisions table).
 
 - [x] **2.10 Determinism check.** Generate the same seed into two folders and compare the files.
   - Done when: all files are byte-identical.
@@ -207,8 +207,8 @@ Tell Dhruv the first three: he reads your files and will be affected.
   time python -m gen --seed 0 --n 300 --out data/
   ```
   - Done when: 300 complete scenes exist and the time is about 15 minutes or less.
-  - Result: 300 complete scenes in 676 s (11.3 min) with 8 workers, while the machine was partly busy (load ~5). 11 scenes hit the settle cap and were rendered with a warning, as decided. `data/` is 1.0 GB, mostly float32 depth `.npy` files (3 MB each).
-  - Contents: 3,571 objects, 3–20 per scene (median 12). Lighting, shapes and colours are about even. Scene occlusion runs 0–1.0 (median 0.35). 25 objects are fully hidden. One scene has `distractors: null` (its anchor fell off). Only 221 object-on-object contacts across 300 scenes, so stacking is thin for F5/F7.
+  - Result: 300 complete scenes in 676 s (11.3 min) with 8 workers, while the machine was partly busy (load ~5). A re-run after the schema fix took 462 s (7.7 min). 11 scenes hit the settle cap and were rendered with a warning, as decided. `data/` is 1.0 GB, mostly float32 depth `.npy` files (3 MB each).
+  - Contents: 3,571 objects, 3–20 per scene (median 12). Lighting, shapes and colours are about even. Scene occlusion runs 0–1.0 (median 0.35). 25 objects are fully hidden. One scene (s_000170) had its distractor anchor fall off; it is now rebuilt from the same rng stream, so `distractors` is always an integer. Only 221 object-on-object contacts across 300 scenes, so stacking is thin for F5/F7.
 
 - [x] **6.2 Determinism at scale.** Run it again into a second folder and compare hashes of all files.
   - Done when: everything matches.
