@@ -83,7 +83,7 @@
       ],
       "pixel_area": 4580,
       "visible_frac": 1.0,
-      "depth_mean_m": 0.9624
+      "depth_mean_m": 0.9409
     },
     {
       "id": "o2",
@@ -120,7 +120,7 @@
       ],
       "pixel_area": 6182,
       "visible_frac": 1.0,
-      "depth_mean_m": 0.9365
+      "depth_mean_m": 0.914
     },
     {
       "id": "o3",
@@ -157,7 +157,7 @@
       ],
       "pixel_area": 4156,
       "visible_frac": 1.0,
-      "depth_mean_m": 0.798
+      "depth_mean_m": 0.7742
     },
     {
       "id": "o4",
@@ -194,7 +194,7 @@
       ],
       "pixel_area": 9512,
       "visible_frac": 1.0,
-      "depth_mean_m": 0.781
+      "depth_mean_m": 0.7609
     }
   ],
   "contacts": [

@@ -11,7 +11,7 @@ Outputs, laid out exactly like data/ so `--data fixtures/` and `--data data/` be
   fixtures/scenes/<scene_id>.json   scene.json contract
   fixtures/images/<scene_id>.png    RGB, 1024x768
   fixtures/seg/<scene_id>.png       8-bit, pixel = seg_id (0 nothing/floor, 1 table, objects from 2)
-  fixtures/depth/<scene_id>.npy     float32 metres along the camera's viewing axis
+  fixtures/depth/<scene_id>.npy     float32 metres along the camera's viewing axis, per-pixel surface depth
   fixtures/tasks.jsonl              ~15 hand-written tasks covering F1-F10
   fixtures/results/mock.jsonl       fake results for a "mock" model (right, wrong, partial, parse failure, text_only)
 
@@ -101,13 +101,57 @@ def project(points: np.ndarray):
     return px, -eye_pts[:, 2]
 
 
-def background():
-    """Per-pixel seg (table 1 / floor 0), depth and RGB from ray-plane intersection."""
+def ray_dirs():
+    """World-space ray direction per pixel, scaled so the eye-space z component is -1.
+    So for a hit at EYE + t * dir, t is the depth along the camera axis in metres."""
     xs, ys = np.meshgrid(np.arange(W) + 0.5, np.arange(H) + 0.5)
     ndc_x, ndc_y = xs / W * 2 - 1, 1 - ys / H * 2
     tan_half = math.tan(math.radians(FOV_DEG) / 2)
     dir_eye = np.stack([ndc_x * tan_half * W / H, ndc_y * tan_half, -np.ones_like(ndc_x)], -1)
-    dir_world = dir_eye @ VIEW[:3, :3]  # R^T applied per pixel
+    return dir_eye @ VIEW[:3, :3]  # R^T applied per pixel
+
+
+RAY_DIRS = ray_dirs()
+
+
+def ray_hit(o, dirs):
+    """Depth (t) where rays from the camera first hit primitive `o`; NaN where they miss."""
+    sx, sy, sz = (v / 100 for v in o["size_cm"])
+    R = yaw_matrix(o["yaw"])
+    org = R.T @ (EYE - np.array(o["xyz"]))       # ray origin in the object's frame
+    d = dirs @ R                                  # ray directions in the object's frame
+    n = len(d)
+    if o["shape"] == "sphere":
+        r = sx / 2
+        a, b, c = (d * d).sum(1), 2 * d @ org, org @ org - r * r
+        disc = b * b - 4 * a * c
+        t = np.where(disc >= 0, (-b - np.sqrt(np.maximum(disc, 0))) / (2 * a), np.nan)
+    elif o["shape"] == "box":
+        half = np.array([sx, sy, sz]) / 2
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t1, t2 = (-half - org) / d, (half - org) / d
+        tmin, tmax = np.minimum(t1, t2).max(1), np.maximum(t1, t2).min(1)
+        t = np.where((tmax >= tmin) & (tmax > 0), tmin, np.nan)
+    else:  # cylinder with a vertical axis
+        r, h = sx / 2, sz / 2
+        a = d[:, 0] ** 2 + d[:, 1] ** 2
+        b = 2 * (org[0] * d[:, 0] + org[1] * d[:, 1])
+        c = org[0] ** 2 + org[1] ** 2 - r * r
+        disc = b * b - 4 * a * c
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t_side = np.where(disc >= 0, (-b - np.sqrt(np.maximum(disc, 0))) / (2 * a), np.nan)
+            z_side = org[2] + t_side * d[:, 2]
+            t_side = np.where(np.abs(z_side) <= h, t_side, np.nan)
+            t_cap = (h - org[2]) / d[:, 2]
+            xy = org[:2] + t_cap[:, None] * d[:, :2]
+            t_cap = np.where((xy ** 2).sum(1) <= r * r, t_cap, np.nan)
+        t = np.fmin(t_side, t_cap)
+    return np.where(t > 0, t, np.nan) if n else t
+
+
+def background():
+    """Per-pixel seg (table 1 / floor 0), depth and RGB from ray-plane intersection."""
+    dir_world = RAY_DIRS
     t_table = -EYE[2] / dir_world[..., 2]
     hit = EYE + t_table[..., None] * dir_world
     on_table = (np.abs(hit[..., 0]) <= TABLE_HALF[0]) & (np.abs(hit[..., 1]) <= TABLE_HALF[1])
@@ -194,7 +238,8 @@ def render(scene_id, seed, objects, contacts, counterfactuals, extra=None, light
     for o in order:
         m = solo[o["id"]]
         seg[m] = seg_ids[o["id"]]
-        depth[m] = centre_depth[o["id"]]
+        hit = ray_hit(o, RAY_DIRS[m])  # true surface depth; the hull edge can miss by a pixel
+        depth[m] = np.where(np.isnan(hit), centre_depth[o["id"]], hit)
         base = np.array(COLORS[o["color"]])
         draw.polygon([tuple(p) for p in polys[o["id"]]], fill=tuple(int(v) for v in base),
                      outline=tuple(int(v) for v in base * 0.55))
