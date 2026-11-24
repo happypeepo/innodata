@@ -42,6 +42,7 @@ STILL_LIN_MPS = 0.001
 STILL_ANG_RADPS = 0.01
 STILL_STEPS = 24  # must hold for 0.1 s, so a bounce apex or the spawn instant doesn't count
 MAX_SETTLE_STEPS = 2400
+MAX_BUILD_ATTEMPTS = 10
 
 # Support: averaged contact normal within ~72 degrees of vertical. Occlusion: at least 1% hidden.
 SUPPORT_MIN_NZ = 0.3
@@ -441,17 +442,22 @@ def generate_scene(seed: int, out_dir: str | Path, ranges: dict | None = None) -
     scene_id = f"s_{seed:06d}"
     rng = make_rng(seed)
     knobs = draw_knobs(rng, {**DEFAULT_RANGES, **(ranges or {})})
-    attrs, anchor = draw_attributes(rng, knobs.n_objects, knobs.distractors)
-    client, table_id, top_z = make_world()
-    try:
-        objects = spawn_objects(client, rng, attrs, anchor, top_z, knobs.scale)
-        _, settled = settle(client, objects)
-        if not settled:
-            print(f"warning: {scene_id} hit the {MAX_SETTLE_STEPS}-step settle cap", file=sys.stderr)
-        objects = remove_fallen(client, objects, top_z)
-        return write_scene(client, table_id, top_z, objects, seed, out, knobs)
-    finally:
-        p.disconnect(physicsClientId=client)
+    # If the distractor anchor falls off the table, rebuild from the same rng stream (next draws).
+    for _ in range(MAX_BUILD_ATTEMPTS):
+        attrs, anchor = draw_attributes(rng, knobs.n_objects, knobs.distractors)
+        client, table_id, top_z = make_world()
+        try:
+            objects = spawn_objects(client, rng, attrs, anchor, top_z, knobs.scale)
+            _, settled = settle(client, objects)
+            if not settled:
+                print(f"warning: {scene_id} hit the {MAX_SETTLE_STEPS}-step settle cap", file=sys.stderr)
+            objects = remove_fallen(client, objects, top_z)
+            if any(o.anchor for o in objects):
+                return write_scene(client, table_id, top_z, objects, seed, out, knobs)
+            print(f"note: {scene_id} distractor anchor fell off the table; rebuilding", file=sys.stderr)
+        finally:
+            p.disconnect(physicsClientId=client)
+    raise RuntimeError(f"{scene_id}: distractor anchor fell off the table {MAX_BUILD_ATTEMPTS} times")
 
 
 def count_distractors(objects: list[SceneObject]) -> int | None:
@@ -522,6 +528,8 @@ def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObj
         "objects": scene_objects,
         "contacts": contacts,
         "occludes": occlusion_pairs(seg, objects, alone),
+        "counterfactuals": {},  # not computed by the generator; filled by whoever builds F8
+        "pair": None,           # set only for F10 before/after scenes
         "difficulty": {
             "n_objects": len(objects),
             "occlusion": round(max((1.0 - o["visible_frac"] for o in scene_objects), default=0.0), 3),
