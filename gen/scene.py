@@ -62,6 +62,25 @@ SHAPES = ("box", "cylinder", "sphere")
 
 DENSITY_KG_M3 = 500.0
 
+# Lighting presets for the main render. Any light parameter switches PyBullet's CPU renderer to its
+# shadowed path, so all presets set shadow=1 and share one light direction.
+LIGHT_DIRECTION = [0.4, 0.6, 1.0]
+LIGHTING = {
+    "bright": dict(lightAmbientCoeff=0.75, lightDiffuseCoeff=0.5, lightSpecularCoeff=0.05),
+    "normal": dict(lightAmbientCoeff=0.6, lightDiffuseCoeff=0.35, lightSpecularCoeff=0.05),
+    "dim": dict(lightAmbientCoeff=0.3, lightDiffuseCoeff=0.3, lightSpecularCoeff=0.02),
+}
+
+# Difficulty knobs: each scene draws its values from these ranges with its own rng.
+DEFAULT_RANGES = {
+    "n_objects": (3, 20),
+    "elevation_deg": (30.0, 70.0),
+    "azimuth_deg": (0.0, 360.0),
+    "distractors": (0, 3),
+    "lighting": ("bright", "normal", "dim"),
+    "scale": (1.0, 1.0),
+}
+
 
 @dataclass
 class SceneObject:
@@ -71,6 +90,30 @@ class SceneObject:
     color: str
     size_cm: list[float]
     seg_id: int = 0
+    anchor: bool = False  # the object the distractors are planted around
+
+
+@dataclass
+class Knobs:
+    n_objects: int
+    elevation_deg: float
+    azimuth_deg: float
+    distractors: int
+    lighting: str
+    scale: float
+
+
+def draw_knobs(rng: np.random.Generator, ranges: dict) -> Knobs:
+    """One scene's knob values. Angles are rounded to 0.1 deg and scale to 0.01 before use."""
+    lo, hi = ranges["n_objects"]
+    n = int(rng.integers(lo, hi + 1))
+    elevation = round(float(rng.uniform(*ranges["elevation_deg"])), 1)
+    azimuth = round(float(rng.uniform(*ranges["azimuth_deg"])), 1) % 360.0
+    lo, hi = ranges["distractors"]
+    k = min(int(rng.integers(lo, hi + 1)), n - 1)
+    lighting = ranges["lighting"][rng.integers(len(ranges["lighting"]))]
+    scale = round(float(rng.uniform(*ranges["scale"])), 2)
+    return Knobs(n, elevation, azimuth, k, lighting, scale)
 
 
 def make_world() -> tuple[int, int, float]:
@@ -103,8 +146,33 @@ def make_rng(seed: int) -> np.random.Generator:
     return np.random.default_rng(seed)
 
 
-def draw_size_cm(rng: np.random.Generator, shape: str) -> list[float]:
-    """[x, y, z] extent in cm, rounded to 0.1 cm so the stored size is the simulated size."""
+def draw_attributes(rng: np.random.Generator, n: int, k: int) -> tuple[list[tuple[str, str]], int]:
+    """(shape, colour) per object with exactly k distractors around one anchor.
+
+    The k distractors share the anchor's colour (different shape) or its shape (different colour),
+    50/50. Every other object shares neither, so the anchor's colour+shape is unique.
+    Returns (attributes in spawn order, index of the anchor).
+    """
+    colors = list(COLORS)
+    shape0 = SHAPES[rng.integers(len(SHAPES))]
+    color0 = colors[rng.integers(len(colors))]
+    other_shapes = [s for s in SHAPES if s != shape0]
+    other_colors = [c for c in colors if c != color0]
+    attrs = [(shape0, color0)]
+    for i in range(1, n):
+        if i <= k and rng.random() < 0.5:
+            attrs.append((other_shapes[rng.integers(len(other_shapes))], color0))
+        elif i <= k:
+            attrs.append((shape0, other_colors[rng.integers(len(other_colors))]))
+        else:
+            attrs.append((other_shapes[rng.integers(len(other_shapes))],
+                          other_colors[rng.integers(len(other_colors))]))
+    order = rng.permutation(n)
+    return [attrs[j] for j in order], int(np.flatnonzero(order == 0)[0])
+
+
+def draw_size_cm(rng: np.random.Generator, shape: str, scale: float = 1.0) -> list[float]:
+    """[x, y, z] extent in cm times scale, rounded to 0.1 cm so the stored size is the simulated size."""
     if shape == "box":
         size = rng.uniform(4.0, 10.0, size=3)
     elif shape == "cylinder":
@@ -113,7 +181,7 @@ def draw_size_cm(rng: np.random.Generator, shape: str) -> list[float]:
     else:
         d = rng.uniform(4.0, 8.0)
         size = np.array([d, d, d])
-    return [round(float(v), 1) for v in size]
+    return [round(float(v) * scale, 1) for v in size]
 
 
 def spawn_object(client: int, shape: str, size_cm: list[float], color: str, xyz_m, quat) -> int:
@@ -142,8 +210,9 @@ def spawn_object(client: int, shape: str, size_cm: list[float], color: str, xyz_
     return body
 
 
-def spawn_objects(client: int, rng: np.random.Generator, n: int, top_z: float) -> list[SceneObject]:
-    """Drop n random objects over the spawn area.
+def spawn_objects(client: int, rng: np.random.Generator, attrs: list[tuple[str, str]], anchor: int,
+                  top_z: float, scale: float = 1.0) -> list[SceneObject]:
+    """Drop one object per (shape, colour) over the spawn area, at random positions and sizes.
 
     Each object starts just above the table, or just above the highest earlier object whose
     footprint it overlaps, so nothing starts interpenetrating and drops stay short.
@@ -151,11 +220,8 @@ def spawn_objects(client: int, rng: np.random.Generator, n: int, top_z: float) -
     gap = 0.01
     objects = []
     placed = []  # (x, y, footprint radius, top z) of earlier spawns
-    colors = list(COLORS)
-    for _ in range(n):
-        shape = SHAPES[rng.integers(len(SHAPES))]
-        color = colors[rng.integers(len(colors))]
-        size_cm = draw_size_cm(rng, shape)
+    for i, (shape, color) in enumerate(attrs):
+        size_cm = draw_size_cm(rng, shape, scale)
         x = rng.uniform(-SPAWN_HALF_X_M, SPAWN_HALF_X_M)
         y = rng.uniform(-SPAWN_HALF_Y_M, SPAWN_HALF_Y_M)
         yaw = rng.uniform(-np.pi, np.pi)
@@ -169,7 +235,8 @@ def spawn_objects(client: int, rng: np.random.Generator, n: int, top_z: float) -
         quat = p.getQuaternionFromEuler([0.0, 0.0, yaw])
         body = spawn_object(client, shape, size_cm, color, [x, y, z], quat)
         placed.append((x, y, radius, bottom + sz))
-        objects.append(SceneObject(id="", body=body, shape=shape, color=color, size_cm=size_cm))
+        objects.append(SceneObject(id="", body=body, shape=shape, color=color, size_cm=size_cm,
+                                   anchor=i == anchor))
     return objects
 
 
@@ -210,10 +277,14 @@ def camera_matrices(top_z: float, elevation_deg: float, azimuth_deg: float) -> t
     return list(view), list(proj)
 
 
-def render(client: int, view, proj):
-    """Return (rgb uint8 HxWx3, depth metres float32 HxW, raw body-id seg int32 HxW)."""
+def render(client: int, view, proj, lighting: str | None = None):
+    """Return (rgb uint8 HxWx3, depth metres float32 HxW, raw body-id seg int32 HxW).
+
+    lighting=None uses the renderer's cheap unshadowed default (enough for seg-only renders).
+    """
+    light = {} if lighting is None else dict(LIGHTING[lighting], lightDirection=LIGHT_DIRECTION, shadow=1)
     _, _, rgba, zbuf, seg = p.getCameraImage(WIDTH, HEIGHT, view, proj, renderer=p.ER_TINY_RENDERER,
-                                             physicsClientId=client)
+                                             physicsClientId=client, **light)
     rgb = np.reshape(np.asarray(rgba, dtype=np.uint8), (HEIGHT, WIDTH, 4))[:, :, :3]
     zbuf = np.reshape(np.asarray(zbuf, dtype=np.float64), (HEIGHT, WIDTH))
     depth = (CAM_FAR_M * CAM_NEAR_M / (CAM_FAR_M - (CAM_FAR_M - CAM_NEAR_M) * zbuf)).astype(np.float32)
@@ -327,35 +398,49 @@ def git_version() -> str:
     return f"gen@{sha}"
 
 
-def generate_scene(seed: int, out_dir: str | Path, n_objects: int,
-                   elevation_deg: float = DEFAULT_ELEVATION_DEG,
-                   azimuth_deg: float = DEFAULT_AZIMUTH_DEG) -> dict:
+def generate_scene(seed: int, out_dir: str | Path, ranges: dict | None = None) -> dict:
     """Build, settle and render one scene; write its files under out_dir and return scene.json."""
     out = Path(out_dir)
     scene_id = f"s_{seed:06d}"
     rng = make_rng(seed)
+    knobs = draw_knobs(rng, {**DEFAULT_RANGES, **(ranges or {})})
+    attrs, anchor = draw_attributes(rng, knobs.n_objects, knobs.distractors)
     client, table_id, top_z = make_world()
     try:
-        objects = spawn_objects(client, rng, n_objects, top_z)
+        objects = spawn_objects(client, rng, attrs, anchor, top_z, knobs.scale)
         _, settled = settle(client, objects)
         if not settled:
             print(f"warning: {scene_id} hit the {MAX_SETTLE_STEPS}-step settle cap", file=sys.stderr)
         objects = remove_fallen(client, objects, top_z)
-        return write_scene(client, table_id, top_z, objects, seed, out, elevation_deg, azimuth_deg)
+        return write_scene(client, table_id, top_z, objects, seed, out, knobs)
     finally:
         p.disconnect(physicsClientId=client)
 
 
+def count_distractors(objects: list[SceneObject]) -> int | None:
+    """Objects sharing the anchor's colour or shape, recounted after fallen objects were removed.
+
+    None when there is no anchor (hand-built scenes, or the anchor fell off the table).
+    """
+    anchor = next((o for o in objects if o.anchor), None)
+    if anchor is None:
+        return None
+    return sum(1 for o in objects if o is not anchor and (o.color == anchor.color or o.shape == anchor.shape))
+
+
 def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObject], seed: int,
-                out: Path, elevation_deg: float, azimuth_deg: float) -> dict:
+                out: Path, knobs: Knobs | None = None) -> dict:
     """Render a settled world, compute per-object facts, write the files and return scene.json."""
     scene_id = f"s_{seed:06d}"
+    if knobs is None:  # hand-built scenes: default camera and light, no planted distractors
+        knobs = Knobs(len(objects), DEFAULT_ELEVATION_DEG, DEFAULT_AZIMUTH_DEG, 0, "normal", 1.0)
+    elevation_deg, azimuth_deg = knobs.elevation_deg, knobs.azimuth_deg
     for i, o in enumerate(objects):
         o.id = f"o{i + 1}"
         o.seg_id = SEG_FIRST_OBJECT + i
 
     view, proj = camera_matrices(top_z, elevation_deg, azimuth_deg)
-    rgb, depth, seg_raw = render(client, view, proj)
+    rgb, depth, seg_raw = render(client, view, proj, knobs.lighting)
     seg = remap_seg(seg_raw, table_id, objects)
     contacts = contact_graph(client, table_id, objects)  # before render_alone_masks moves bodies around
     alone = render_alone_masks(client, objects, view, proj)
@@ -393,6 +478,13 @@ def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObj
         "objects": scene_objects,
         "contacts": contacts,
         "occludes": occlusion_pairs(seg, objects, alone),
+        "difficulty": {
+            "n_objects": len(objects),
+            "occlusion": round(max((1.0 - o["visible_frac"] for o in scene_objects), default=0.0), 3),
+            "distractors": count_distractors(objects),
+            "lighting": knobs.lighting,
+            "scale": knobs.scale,
+        },
     }
     (out / f"scenes/{scene_id}.json").write_text(json.dumps(scene, indent=2) + "\n")
     return scene

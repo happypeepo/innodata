@@ -178,19 +178,23 @@ Tell Dhruv the first three: he reads your files and will be affected.
 
 [AGENTS: "Difficulty knobs as CLI flags. `python -m gen --seed 0 --n 300 --out data/`."]
 
-- [ ] **5.1 Basic CLI.** `gen/__main__.py` with `argparse` flags `--seed`, `--n` and `--out`, looping over scenes using your seed rule (1.7).
+- [x] **5.1 Basic CLI.** `gen/__main__.py` with `argparse` flags `--seed`, `--n` and `--out`, looping over scenes using your seed rule (1.7).
   - Done when: `python -m gen --seed 0 --n 5 --out data/` writes 5 complete scenes.
+  - Result: it writes 5 complete scenes (image, depth, seg and scene.json each). Knob flags are ranges each scene samples from (Decisions table). Took 49–84 s per scene; see Phase 6.
 
-- [ ] **5.2 `n_objects` knob** (range 3–20). [AGENTS]
-- [ ] **5.3 `camera` knob** (elevation and azimuth). [AGENTS]
-- [ ] **5.4 `occlusion` knob** (max hidden fraction). [AGENTS] How it changes generation: [decide]
-- [ ] **5.5 `distractors` knob** (same colour or same shape as the target). [AGENTS] How: [decide]
-- [ ] **5.6 `lighting` knob.** [AGENTS] The example value is `"dim"`. Values and how they work: [decide]
-- [ ] **5.7 `scale_range` knob.** [AGENTS] Meaning: [decide]
-- [ ] **5.8 `difficulty` block.** Write the knob values used for each scene, e.g. `{"n_objects": 9, "occlusion": 0.35, "distractors": 2, "lighting": "dim"}`. [AGENTS]
+- [x] **5.2 `n_objects` knob** (range 3–20). [AGENTS]
+- [x] **5.3 `camera` knob** (elevation and azimuth). [AGENTS]
+- [x] **5.4 `occlusion` knob** (max hidden fraction). [AGENTS] How it changes generation: [decide]
+- [x] **5.5 `distractors` knob** (same colour or same shape as the target). [AGENTS] How: [decide]
+- [x] **5.6 `lighting` knob.** [AGENTS] The example value is `"dim"`. Values and how they work: [decide]
+- [x] **5.7 `scale_range` knob.** [AGENTS] Meaning: [decide]
+- [x] **5.8 `difficulty` block.** Write the knob values used for each scene, e.g. `{"n_objects": 9, "occlusion": 0.35, "distractors": 2, "lighting": "dim"}`. [AGENTS]
   - Done when: every scene has the block, and changing a flag visibly changes the scenes.
+  - Result: the block is `{n_objects, occlusion, distractors, lighting, scale}`. Camera angles live in the `camera` block. `n_objects` and `distractors` are recounted after fallen objects are removed; `distractors` is `null` if the anchor itself fell. The same seed with two opposite pinned flag sets gave visibly different scenes (count, viewpoint, light, size).
+  - Exact-k distractors: 2,000 random draws, 0 failures.
+  - Watch: at 1.3× scale and 70° elevation, 2 objects ran off the image edge, and an object cut by the frame still reads `visible_frac` 1.0 because its alone-mask is cut too. This never happened at the default scale (0 of 97 objects). Revisit if the team widens `--scale-range`.
 
-- [ ] **5.9 Commit plus log line.**
+- [x] **5.9 Commit plus log line.**
 
 ---
 
