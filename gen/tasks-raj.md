@@ -202,20 +202,29 @@ Tell Dhruv the first three: he reads your files and will be affected.
 
 [AGENTS: "300+ scenes are generated deterministically from a seed in under ~15 min on a laptop."]
 
-- [ ] **6.1 Full run, timed.**
+- [x] **6.1 Full run, timed.**
   ```bash
   time python -m gen --seed 0 --n 300 --out data/
   ```
   - Done when: 300 complete scenes exist and the time is about 15 minutes or less.
+  - Result: 300 complete scenes in 676 s (11.3 min) with 8 workers, while the machine was partly busy (load ~5). 11 scenes hit the settle cap and were rendered with a warning, as decided. `data/` is 1.0 GB, mostly float32 depth `.npy` files (3 MB each).
+  - Contents: 3,571 objects, 3–20 per scene (median 12). Lighting, shapes and colours are about even. Scene occlusion runs 0–1.0 (median 0.35). 25 objects are fully hidden. One scene has `distractors: null` (its anchor fell off). Only 221 object-on-object contacts across 300 scenes, so stacking is thin for F5/F7.
 
-- [ ] **6.2 Determinism at scale.** Run it again into a second folder and compare hashes of all files.
+- [x] **6.2 Determinism at scale.** Run it again into a second folder and compare hashes of all files.
   - Done when: everything matches.
+  - Result: a second full run (608 s) into another folder gave all 1,200 files byte-identical. Output doesn't depend on `--workers`: a 1-worker run matches too.
 
-- [ ] **6.3 Seg check on all scenes.** A small script confirms that every seg PNG's ids match its `objects[]`. [AGENTS]
+- [x] **6.3 Seg check on all scenes.** A small script confirms that every seg PNG's ids match its `objects[]`. [AGENTS]
+  - Result: `python -m gen.check --data data/` reports 300/300 pass. It checks files, sizes, seg values ⊆ {0, 1, seg_ids}, and per-object pixel count == `pixel_area`. On a corrupted copy it catches an unknown seg id and a wrong `pixel_area`, and exits 1.
 
-- [ ] **6.4 Speed up if needed.** Usual costs: the extra render per object in 3.3, and long settle loops. Scenes are independent, so you can run them in parallel processes.
+- [x] **6.4 Speed up if needed.** Usual costs: the extra render per object in 3.3, and long settle loops. Scenes are independent, so you can run them in parallel processes.
+  - Result: per-scene time went from 50–85 s to 5–7 s on one worker.
+    - Render-alone now draws only the object's own image rectangle, through an off-axis projection. Masks are bit-identical to full-frame renders and it is ~50× faster, because CPU render cost scales with pixels.
+    - The extra renders pass `shadow=0` explicitly, because after a lit render PyBullet stays on its slower shadowed path.
+    - Added `--workers` (default: CPU count), a process pool.
+  - The remaining cost per scene is the shadowed main render (~4.7 s) plus settling (~1 s).
 
-- [ ] **6.5 Commit plus log line.**
+- [x] **6.5 Commit plus log line.**
 
 ---
 

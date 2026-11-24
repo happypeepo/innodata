@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -318,9 +319,39 @@ def mask_facts(mask: np.ndarray, depth: np.ndarray) -> dict:
     }
 
 
+def crop_projection(proj, x0: int, y0: int, w: int, h: int) -> list[float]:
+    """Off-axis projection that renders only pixels [x0, x0+w) x [y0, y0+h) of the full image.
+
+    Pixel (j, i) of a w x h render at this projection is pixel (x0+j, y0+i) of the full render.
+    """
+    P = np.array(proj).reshape(4, 4).T  # PyBullet matrices are column-major
+    A = np.array([[WIDTH / w, 0, 0, (WIDTH - 2 * x0 - w) / w],
+                  [0, HEIGHT / h, 0, -(HEIGHT - 2 * y0 - h) / h],
+                  [0, 0, 1, 0],
+                  [0, 0, 0, 1]])
+    return list((A @ P).T.reshape(-1))
+
+
+def pixel_box(client: int, body: int, view, proj, pad: int = 2) -> tuple[int, int, int, int]:
+    """Image rectangle (x0, y0, x1, y1), max exclusive, that contains the body's projected AABB."""
+    lo, hi = p.getAABB(body, physicsClientId=client)
+    corners = np.array([[x, y, z, 1.0] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]).T
+    clip = np.array(proj).reshape(4, 4).T @ np.array(view).reshape(4, 4).T @ corners
+    xs = (clip[0] / clip[3] + 1) / 2 * WIDTH
+    ys = (1 - clip[1] / clip[3]) / 2 * HEIGHT
+    x0 = max(int(np.floor(xs.min())) - pad, 0)
+    y0 = max(int(np.floor(ys.min())) - pad, 0)
+    x1 = min(int(np.ceil(xs.max())) + pad, WIDTH)
+    y1 = min(int(np.ceil(ys.max())) + pad, HEIGHT)
+    return x0, y0, x1, y1
+
+
 def render_alone_masks(client: int, objects: list[SceneObject], view, proj) -> dict[int, np.ndarray]:
     """Each object's mask with every other object moved out of view (same camera, table stays).
 
+    Only the object's own image rectangle is rendered (render cost scales with pixels); the masks
+    are bit-identical to full-frame renders. shadow=0 is explicit because once a lit render has
+    run, PyBullet's CPU renderer keeps using its slower shadowed path.
     No stepSimulation happens here. Restoring uses saveState/restoreState because feeding a pose back
     through resetBasePositionAndOrientation re-normalises the quaternion (~1e-17 drift).
     """
@@ -333,8 +364,14 @@ def render_alone_masks(client: int, objects: list[SceneObject], view, proj) -> d
             p.resetBasePositionAndOrientation(o.body, *parked[o.body], physicsClientId=client)
         for o in objects:
             p.resetBasePositionAndOrientation(o.body, *saved[o.body], physicsClientId=client)
-            _, _, seg = render(client, view, proj)
-            masks[o.body] = seg == o.body
+            mask = np.zeros((HEIGHT, WIDTH), dtype=bool)
+            x0, y0, x1, y1 = pixel_box(client, o.body, view, proj)
+            if x1 > x0 and y1 > y0:
+                w, h = x1 - x0, y1 - y0
+                seg = p.getCameraImage(w, h, view, crop_projection(proj, x0, y0, w, h),
+                                       renderer=p.ER_TINY_RENDERER, shadow=0, physicsClientId=client)[4]
+                mask[y0:y1, x0:x1] = np.reshape(np.asarray(seg), (h, w)) == o.body
+            masks[o.body] = mask
             p.resetBasePositionAndOrientation(o.body, *parked[o.body], physicsClientId=client)
     finally:
         p.restoreState(stateId=state, physicsClientId=client)
@@ -426,6 +463,13 @@ def count_distractors(objects: list[SceneObject]) -> int | None:
     if anchor is None:
         return None
     return sum(1 for o in objects if o is not anchor and (o.color == anchor.color or o.shape == anchor.shape))
+
+
+def generate_scene_timed(seed: int, out_dir: str | Path, ranges: dict | None = None) -> tuple[str, int, float]:
+    """generate_scene for a worker process: returns (scene_id, n_objects, seconds)."""
+    t0 = time.time()
+    scene = generate_scene(seed, out_dir, ranges)
+    return scene["scene_id"], len(scene["objects"]), time.time() - t0
 
 
 def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObject], seed: int,
