@@ -52,6 +52,8 @@ Shared (edit by PR, tag the owner): `Makefile`, `requirements.txt`, `context/`.
 
 **Validity rules** (B enforces them, the validator rejects tasks that break them):
 - The target must be ≥ 30% visible (`visible_frac`) unless the question is explicitly about occlusion (F3).
+- F3 counts objects with `visible_frac ≥ 0.10`; drop the task if any matching object is between 0 and 0.10. Fully hidden objects (0) are not counted.
+- F6 free-to-pick = nothing rests on it (from `contacts`) and `visible_frac ≥ 0.30`.
 - Referring expressions must have **exactly one** match in the scene (uniqueness check).
 - Relation answers (F4) need a margin: depth difference ≥ 3 cm, otherwise drop the task as ambiguous.
 - F8/F9 labels come from re-simulating, not from heuristics.
@@ -62,9 +64,9 @@ Shared (edit by PR, tag the owner): `Makefile`, `requirements.txt`, `context/`.
 ```json
 {
   "scene_id": "s_000123", "seed": 123, "generator_version": "gen@<git-sha>",
-  "image_path": "data/images/s_000123.png",
-  "depth_path": "data/depth/s_000123.npy",
-  "seg_path": "data/seg/s_000123.png",
+  "image_path": "images/s_000123.png",
+  "depth_path": "depth/s_000123.npy",
+  "seg_path": "seg/s_000123.png",
   "width": 1024, "height": 768,
   "camera": {"view_matrix": [16 floats], "proj_matrix": [16 floats], "elevation_deg": 45, "azimuth_deg": 30},
   "objects": [
@@ -80,6 +82,7 @@ Shared (edit by PR, tag the owner): `Makefile`, `requirements.txt`, `context/`.
   "difficulty": {"n_objects": 9, "occlusion": 0.35, "distractors": 2, "lighting": "dim"}
 }
 ```
+- All paths are **relative to the data folder** passed as `--data`, so `--data fixtures/` and `--data data/` both work.
 - `seg_path` is a PNG where pixel value = `seg_id`. Masks derive from it, so there's no per-object mask file.
 - `counterfactuals` is filled only for objects that support something (cost control).
 - `pair` is set for F10 scenes: `{"before": "s_000123a", "after": "s_000123b", "moved": ["o3"]}`.
@@ -89,7 +92,7 @@ Shared (edit by PR, tag the owner): `Makefile`, `requirements.txt`, `context/`.
 ```json
 {
   "task_id": "t_000123_F1_02", "scene_id": "s_000123", "family": "F1",
-  "images": ["data/images/s_000123.png"],
+  "images": ["images/s_000123.png"],
   "question": "Point to the red cylinder left of the blue box.",
   "answer_type": "point",
   "answer_format": "Return JSON: {\"point\": [y, x]} with y, x normalised 0-1000.",
@@ -102,16 +105,31 @@ Shared (edit by PR, tag the owner): `Makefile`, `requirements.txt`, `context/`.
 ```
 `answer_type` ∈ `point | bbox | count | choice | bool | sequence | set`.
 
+**Answer shapes.** C's parser outputs `parsed` in exactly these shapes, already converted to pixels. `reference` uses the same keys, so the checker compares like with like.
+
+| `answer_type` | `parsed` | `reference` |
+|---|---|---|
+| `point` | `{"point": [x, y]}` pixels | `{"seg_ids": [...]}` (any listed mask counts) |
+| `bbox` | `{"bbox": [x1, y1, x2, y2]}` pixels | `{"bbox": [x1, y1, x2, y2], "seg_ids": [...]}` |
+| `count` | `{"count": 4}` | `{"count": 4}` |
+| `choice` | `{"choice": "B"}` | `{"choice": "B", "options": {"A": "o3", "B": "table"}}` |
+| `bool` | `{"bool": true}` | `{"bool": true}` |
+| `sequence` | `{"sequence": ["C", "A", "B"]}` | `{"sequence": [...], "options": {...}, "precedes": [["C", "A"]]}` (any order respecting `precedes` is correct) |
+| `set` | `{"set": ["A", "C"]}` | `{"set": ["A", "C"], "options": {...}}` |
+
+**Objects are named by letter.** Choice, sequence and set questions list lettered options in the question text (`Options: A) blue box B) red cylinder C) table`). The model answers with letters, and `reference.options` maps each letter to an object id. Models are asked for points as `[y, x]` and boxes as `[ymin, xmin, ymax, xmax]`, normalised 0–1000 (see `answer_format`).
+
 ### 3. Checker API (B implements in `validate/checkers.py`, C imports it)
 ```python
 def score(task: dict, parsed: dict, scene: dict) -> float:  # 0.0..1.0, coords already in pixels
 ```
+F8 (`set_f1`) returns the raw F1 as partial credit. Headline accuracy counts only exact matches (F1 = 1.0).
 Until B ships it, C uses `eval/checkers_stub.py` with the same signature (exact-match only) and switches to the real one with a one-line import change.
 
 ### 4. `results.jsonl` (C → D), one row per (task, model, run), in `data/results/<model>.jsonl`
 ```json
 {"task_id": "t_000123_F1_02", "model": "gemini-robotics-er-2-preview", "run": 0,
- "condition": "image | text_only", "raw_response": "...", "parsed": {"point": [350, 441]},
+ "condition": "image | text_only", "raw_response": "...", "parsed": {"point": [441, 350]},
  "parse_ok": true, "score": 1.0, "latency_ms": 1820,
  "tokens_in": 1200, "tokens_out": 40, "cost_usd": 0.0012, "error": null}
 ```
@@ -119,6 +137,8 @@ Until B ships it, C uses `eval/checkers_stub.py` with the same signature (exact-
 ## Work split
 
 Every role can start at hour 0. Only one sync point: **B commits `schema/` + `fixtures/` (3 hand-made scenes + ~15 tasks + fake results) within the first hour.** Until then A, C and D read the contract above.
+
+Check any data folder against the contracts: `python -m schema.check --data fixtures/` (or `--data data/`). `fixtures/` uses the same layout as `data/`: `scenes/`, `images/`, `seg/`, `depth/`, `tasks.jsonl`, `results/<model>.jsonl`.
 
 ### A — Scene Generator (`gen/`)
 - [ ] `gen/scene.py`: PyBullet table + random objects, drop and settle physics, render RGB/depth/seg at the chosen camera.
@@ -136,7 +156,8 @@ Every role can start at hour 0. Only one sync point: **B commits `schema/` + `fi
 - [ ] Referring-expression builder (colour / shape / size / relative position) with a uniqueness check.
 - [ ] `validate/checkers.py`: `point_in_mask`, `point_in_any_mask`, `bbox_iou`, `exact`, `topo_order_valid`, `set_f1`.
 - [ ] `validate/independent.py`: **re-derives answers from the raw seg/depth arrays without reading A's `contacts`/`relations`** and flags any disagreement. This is our "verified independently" evidence.
-- [ ] Human spot-check: a tiny script that shows 50 random tasks with the image and reference overlaid and records agree/disagree → reference error rate.
+- [ ] Human spot-check: a tiny script that shows 50 random tasks with the image and reference overlaid and records agree/disagree → reference error rate. Results are committed as `validate/evidence/human_check_seed<N>.jsonl` (`data/` is gitignored).
+- [ ] Unit tests in `validate/tests/` (pytest), run with `make test`.
 - [ ] Balance: cap tasks per family, balance yes/no and choice answers so a majority baseline gets ≈ chance.
 - **Done when:** `python -m tasks --data data/` gives ~1,000 validated tasks plus `data/validation_report.json` (rejection counts by reason, independent-check agreement %, human-check agreement %).
 
