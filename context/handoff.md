@@ -123,4 +123,5 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 
 ```
 [YYYY-MM-DD HH:MM] <name> (<role>): done: ... | next: ... | blocked on: ...
+[2026-11-24 12:19] Dhruvk2004 (B): done: claimed Role B in AGENTS.md; sent contract questions (parsed coord order, answer shapes, option naming, paths) to lead | next: schema/ + fixtures/ on branch schema/v1-contracts-fixtures | blocked on: none
 ```
