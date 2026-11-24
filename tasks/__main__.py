@@ -4,7 +4,8 @@
     python -m tasks --data fixtures/ --out /tmp/t.jsonl   # fixtures/tasks.jsonl is hand-written, so pass --out
 
 Pipeline: generate -> validity rules (validate/rules.py) -> balance + per-family cap (validate/balance.py)
--> schema check -> write tasks.jsonl and validation_report.json (next to the tasks file).
+-> schema check -> independent re-derivation (validate/independent.py)
+-> write tasks.jsonl and validation_report.json (next to the tasks file).
 Same --data and --seed always give byte-identical output (AGENTS.md rule 3).
 """
 
@@ -19,6 +20,7 @@ from random import Random
 from schema.check import load_validator, schema_errors
 
 from validate.balance import MAX_PER_FAMILY, balance
+from validate.independent import run as run_independent
 from validate.report import build_report, write_report
 from validate.rules import check as check_rules
 
@@ -92,9 +94,10 @@ def main(argv=None):
         return 1
 
     write_jsonl(out, final)
+    independent = run_independent(final, scenes, args.data)
     report = build_report(seed=args.seed, data=args.data, n_scenes=len(scenes), n_generated=len(tasks),
                           n_invalid=len(tasks) - len(valid), rule_rejects=rule_rejects, balance_drops=drops,
-                          gen_rejects=rejects, final=final)
+                          gen_rejects=rejects, final=final, independent=independent)
     report_path = args.report or out.parent / "validation_report.json"
     write_report(report_path, report)
 
@@ -104,6 +107,9 @@ def main(argv=None):
     print("  by family: " + ", ".join(f"{f}={per_family[f]}" for f in families))
     if rule_rejects:
         print("  rule failures: " + "; ".join(f"{k} x{v}" for k, v in sorted(rule_rejects.items())))
+    print(f"  independent check: {independent['agreement_pct']}% agree on {independent['decided_tasks']} checkable "
+          f"tasks; {len(independent['disagreements'])} disagreements; "
+          f"{independent['scene_fields']['problems']} scene-field problems")
     not_balanced = [f for f, v in report["majority_baseline"].items() if v["near_chance"] is False]
     if not_balanced:
         print(f"  majority baseline above chance for: {', '.join(not_balanced)} (see report)")

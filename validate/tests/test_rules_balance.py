@@ -170,5 +170,5 @@ def test_cli_writes_report_and_is_deterministic(tmp_path):
     assert set(report) >= {"counts", "tasks_per_family", "rejections_by_reason", "majority_baseline",
                            "independent_check", "human_check"}
     assert report["counts"]["final"] == len(out_a.read_text().splitlines())
-    assert report["independent_check"]["agreement_pct"] is None  # phase 7
+    assert report["independent_check"]["status"] == "run"        # phase 7
     assert report["human_check"]["agreement_pct"] is None        # phase 8
