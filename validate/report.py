@@ -36,7 +36,7 @@ def build_report(*, seed, data, n_scenes, n_generated, n_invalid, rule_rejects, 
         "majority_baseline": base,
         "all_near_chance": all(checked) if checked else None,
         "independent_check": independent or {"status": "not run yet (phase 7)", "agreement_pct": None},
-        "human_check": human or {"status": "not run yet (phase 8)", "agreement_pct": None},
+        "human_check": human if human and human.get("checked") else {"status": "not run yet (phase 8)", "agreement_pct": None},
     }
 
 

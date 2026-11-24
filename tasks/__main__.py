@@ -5,6 +5,7 @@
 
 Pipeline: generate -> validity rules (validate/rules.py) -> balance + per-family cap (validate/balance.py)
 -> schema check -> independent re-derivation (validate/independent.py)
+-> human spot-check verdicts, if any (validate/evidence/human_check_seed<N>.jsonl, from validate/spotcheck.py)
 -> write tasks.jsonl and validation_report.json (next to the tasks file).
 Same --data and --seed always give byte-identical output (AGENTS.md rule 3).
 """
@@ -23,6 +24,7 @@ from validate.balance import MAX_PER_FAMILY, balance
 from validate.independent import run as run_independent
 from validate.report import build_report, write_report
 from validate.rules import check as check_rules
+from validate.spotcheck import apply_to_tasks, evidence_path, load_results, summarise
 
 from .io import load_scenes, write_jsonl
 from .templates import FAMILIES
@@ -62,6 +64,8 @@ def main(argv=None):
     ap.add_argument("--max-per-family", type=int, default=MAX_PER_FAMILY)
     ap.add_argument("--no-balance", action="store_true", help="skip balancing and the family cap (debugging)")
     ap.add_argument("--report", type=Path, help="report file (default: validation_report.json next to --out)")
+    ap.add_argument("--human-check", type=Path,
+                    help="spot-check verdicts (default: validate/evidence/human_check_seed<seed>.jsonl)")
     args = ap.parse_args(argv)
 
     out = args.out or args.data / "tasks.jsonl"
@@ -93,11 +97,14 @@ def main(argv=None):
         print(f"FAIL: {len(errors)} schema errors, nothing written", file=sys.stderr)
         return 1
 
+    human_results = load_results(args.human_check or evidence_path(args.seed))
+    apply_to_tasks(final, human_results)
+    human = summarise(human_results, final)
     write_jsonl(out, final)
     independent = run_independent(final, scenes, args.data)
     report = build_report(seed=args.seed, data=args.data, n_scenes=len(scenes), n_generated=len(tasks),
                           n_invalid=len(tasks) - len(valid), rule_rejects=rule_rejects, balance_drops=drops,
-                          gen_rejects=rejects, final=final, independent=independent)
+                          gen_rejects=rejects, final=final, independent=independent, human=human)
     report_path = args.report or out.parent / "validation_report.json"
     write_report(report_path, report)
 
@@ -110,6 +117,8 @@ def main(argv=None):
     print(f"  independent check: {independent['agreement_pct']}% agree on {independent['decided_tasks']} checkable "
           f"tasks; {len(independent['disagreements'])} disagreements; "
           f"{independent['scene_fields']['problems']} scene-field problems")
+    print(f"  human check: {human['checked']} checked, {human['agreement_pct']}% agree"
+          + (f", {human['stale']} stale" if human["stale"] else ""))
     not_balanced = [f for f, v in report["majority_baseline"].items() if v["near_chance"] is False]
     if not_balanced:
         print(f"  majority baseline above chance for: {', '.join(not_balanced)} (see report)")
