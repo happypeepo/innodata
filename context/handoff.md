@@ -121,6 +121,7 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 | 2026-11-24 | **Settling:** still = every object < 1 mm/s linear and < 0.01 rad/s angular, checked each step at 240 Hz and held for 24 steps (0.1 s) in a row, cap 2,400 steps (10 s simulated). If the cap is hit, the scene is rendered as-is and a warning is printed. | Raj (A) | Avoids rendering objects mid-roll; bounded runtime |
 | 2026-11-24 | **Seed rule:** scene *i* (0-based) uses `seed = --seed + i`; `scene_id = s_{seed:06d}`. | Raj (A) | Matches the AGENTS example (`s_000123` ↔ 123); B's `task_id` builds on it |
 | 2026-11-24 | **Paths in `scene.json` are relative to the data folder**, e.g. `"images/s_000123.png"`, `"depth/…npy"`, `"seg/…png"` (AGENTS example shows `data/images/…`). **`AGENTS.md` still needs updating in B's contract PR** (rule 7). | Raj (A), Dhruv (B) | `--data fixtures/` and `--data data/` both resolve the same paths |
+| 2026-11-24 | **Per-object number formats:** `bbox_2d = [x_min, y_min, x_max, y_max]` with **inclusive** max (the last mask pixel; width = x_max − x_min + 1). `centroid_2d` = mean `[x, y]` of mask pixels **rounded to int**. `visible_frac` to 3 decimals, `depth_mean_m` to 4. | Raj (A) | Matches the AGENTS example's integer pixels; B's IoU checker must use the same inclusive convention |
 
 ## Open questions
 
@@ -134,4 +135,5 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 [YYYY-MM-DD HH:MM] <name> (<role>): done: ... | next: ... | blocked on: ...
 [2026-11-24 12:19] Dhruvk2004 (B): done: claimed Role B in AGENTS.md; sent contract questions (parsed coord order, answer shapes, option naming, paths) to lead | next: schema/ + fixtures/ on branch schema/v1-contracts-fixtures | blocked on: none
 [2026-11-24 15:21] Raj-Shah19 (A): done: Phase 0 (py3.11 venv, pybullet), Phase 1 decisions logged above, Phase 2 one scene end to end (gen/scene.py: spawn, settle, RGB/depth/seg, scene.json job-1 fields, byte-identical per seed) | next: Phase 3 per-object facts (bbox, centroid, pixel_area, visible_frac, depth_mean_m) | blocked on: B's schema/ to validate scene.json against; AGENTS.md path example needs B's contract PR; Role A claim not pushed (no write access yet)
+[2026-11-24 16:18] Raj-Shah19 (A): done: Phase 3 per-object facts in scene.json (bbox_2d inclusive, centroid_2d int, pixel_area, visible_frac via render-alone, depth_mean_m; fully hidden objects get nulls), byte-identical per seed | next: Phase 4 contacts + occludes | blocked on: B's schema/ to validate against; pushes (no write access yet)
 ```

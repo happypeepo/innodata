@@ -226,6 +226,47 @@ def remap_seg(seg_raw: np.ndarray, table_id: int, objects: list[SceneObject]) ->
     return out
 
 
+def mask_facts(mask: np.ndarray, depth: np.ndarray) -> dict:
+    """bbox (inclusive max), centroid, area and mean depth of one object's full-scene mask.
+
+    A fully hidden object gets pixel_area 0 and nulls for the rest.
+    """
+    area = int(mask.sum())
+    if area == 0:
+        return {"bbox_2d": None, "centroid_2d": None, "pixel_area": 0, "depth_mean_m": None}
+    ys, xs = np.nonzero(mask)
+    return {
+        "bbox_2d": [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())],
+        "centroid_2d": [int(round(float(xs.mean()))), int(round(float(ys.mean())))],
+        "pixel_area": area,
+        "depth_mean_m": round(float(depth[mask].mean(dtype=np.float64)), 4),
+    }
+
+
+def render_alone_masks(client: int, objects: list[SceneObject], view, proj) -> dict[int, np.ndarray]:
+    """Each object's mask with every other object moved out of view (same camera, table stays).
+
+    No stepSimulation happens here. Restoring uses saveState/restoreState because feeding a pose back
+    through resetBasePositionAndOrientation re-normalises the quaternion (~1e-17 drift).
+    """
+    saved = {o.body: p.getBasePositionAndOrientation(o.body, physicsClientId=client) for o in objects}
+    parked = {o.body: ([0.0, 0.0, -10.0 - i], [0.0, 0.0, 0.0, 1.0]) for i, o in enumerate(objects)}
+    state = p.saveState(physicsClientId=client)
+    masks = {}
+    try:
+        for o in objects:
+            p.resetBasePositionAndOrientation(o.body, *parked[o.body], physicsClientId=client)
+        for o in objects:
+            p.resetBasePositionAndOrientation(o.body, *saved[o.body], physicsClientId=client)
+            _, _, seg = render(client, view, proj)
+            masks[o.body] = seg == o.body
+            p.resetBasePositionAndOrientation(o.body, *parked[o.body], physicsClientId=client)
+    finally:
+        p.restoreState(stateId=state, physicsClientId=client)
+        p.removeState(state, physicsClientId=client)
+    return masks
+
+
 def git_version() -> str:
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
@@ -249,41 +290,55 @@ def generate_scene(seed: int, out_dir: str | Path, n_objects: int,
         if not settled:
             print(f"warning: {scene_id} hit the {MAX_SETTLE_STEPS}-step settle cap", file=sys.stderr)
         objects = remove_fallen(client, objects, top_z)
-        for i, o in enumerate(objects):
-            o.id = f"o{i + 1}"
-            o.seg_id = SEG_FIRST_OBJECT + i
-
-        view, proj = camera_matrices(top_z, elevation_deg, azimuth_deg)
-        rgb, depth, seg_raw = render(client, view, proj)
-        seg = remap_seg(seg_raw, table_id, objects)
-
-        rel = {
-            "image_path": f"images/{scene_id}.png",
-            "depth_path": f"depth/{scene_id}.npy",
-            "seg_path": f"seg/{scene_id}.png",
-        }
-        for path in [*rel.values(), f"scenes/{scene_id}.json"]:
-            (out / path).parent.mkdir(parents=True, exist_ok=True)
-        Image.fromarray(rgb).save(out / rel["image_path"])
-        np.save(out / rel["depth_path"], depth)
-        Image.fromarray(seg, mode="L").save(out / rel["seg_path"])
-
-        scene_objects = []
-        for o in objects:
-            xyz, quat = p.getBasePositionAndOrientation(o.body, physicsClientId=client)
-            scene_objects.append({
-                "id": o.id, "seg_id": o.seg_id, "shape": o.shape, "color": o.color, "size_cm": o.size_cm,
-                "pose": {"xyz_m": [round(v, 5) for v in xyz], "quat": [round(v, 5) for v in quat]},
-            })
-        scene = {
-            "scene_id": scene_id, "seed": seed, "generator_version": git_version(),
-            **rel,
-            "width": WIDTH, "height": HEIGHT,
-            "camera": {"view_matrix": view, "proj_matrix": proj,
-                       "elevation_deg": elevation_deg, "azimuth_deg": azimuth_deg},
-            "objects": scene_objects,
-        }
-        (out / f"scenes/{scene_id}.json").write_text(json.dumps(scene, indent=2) + "\n")
-        return scene
+        return write_scene(client, table_id, top_z, objects, seed, out, elevation_deg, azimuth_deg)
     finally:
         p.disconnect(physicsClientId=client)
+
+
+def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObject], seed: int,
+                out: Path, elevation_deg: float, azimuth_deg: float) -> dict:
+    """Render a settled world, compute per-object facts, write the files and return scene.json."""
+    scene_id = f"s_{seed:06d}"
+    for i, o in enumerate(objects):
+        o.id = f"o{i + 1}"
+        o.seg_id = SEG_FIRST_OBJECT + i
+
+    view, proj = camera_matrices(top_z, elevation_deg, azimuth_deg)
+    rgb, depth, seg_raw = render(client, view, proj)
+    seg = remap_seg(seg_raw, table_id, objects)
+    alone = render_alone_masks(client, objects, view, proj)
+
+    rel = {
+        "image_path": f"images/{scene_id}.png",
+        "depth_path": f"depth/{scene_id}.npy",
+        "seg_path": f"seg/{scene_id}.png",
+    }
+    for path in [*rel.values(), f"scenes/{scene_id}.json"]:
+        (out / path).parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(rgb).save(out / rel["image_path"])
+    np.save(out / rel["depth_path"], depth)
+    Image.fromarray(seg, mode="L").save(out / rel["seg_path"])
+
+    scene_objects = []
+    for o in objects:
+        xyz, quat = p.getBasePositionAndOrientation(o.body, physicsClientId=client)
+        facts = mask_facts(seg == o.seg_id, depth)
+        alone_px = int(alone[o.body].sum())
+        visible_frac = round(facts["pixel_area"] / alone_px, 3) if alone_px else 0.0
+        scene_objects.append({
+            "id": o.id, "seg_id": o.seg_id, "shape": o.shape, "color": o.color, "size_cm": o.size_cm,
+            "pose": {"xyz_m": [round(v, 5) for v in xyz], "quat": [round(v, 5) for v in quat]},
+            "bbox_2d": facts["bbox_2d"], "centroid_2d": facts["centroid_2d"],
+            "pixel_area": facts["pixel_area"], "visible_frac": visible_frac,
+            "depth_mean_m": facts["depth_mean_m"],
+        })
+    scene = {
+        "scene_id": scene_id, "seed": seed, "generator_version": git_version(),
+        **rel,
+        "width": WIDTH, "height": HEIGHT,
+        "camera": {"view_matrix": view, "proj_matrix": proj,
+                   "elevation_deg": elevation_deg, "azimuth_deg": azimuth_deg},
+        "objects": scene_objects,
+    }
+    (out / f"scenes/{scene_id}.json").write_text(json.dumps(scene, indent=2) + "\n")
+    return scene

@@ -35,7 +35,12 @@ Branch: `gen/scene-generator` (created from `main` at `f142509`), following the 
   ```
   `requirements.txt` doesn't exist yet. It's a shared file, so add these through a PR and tag the other owners. [AGENTS: shared files are edited by PR]
   - Done when: `python -c "import pybullet, numpy, PIL"` runs without errors.
-  - Note: pybullet 3.2.7 has no macOS arm64 wheel for 3.11, so it builds from source, and on the macOS 27 SDK its bundled zlib fails (`fdopen` macro). Build with `CFLAGS="-Dfdopen=fdopen" CXXFLAGS="-Dfdopen=fdopen" uv pip install pybullet`.
+  - Note: pybullet 3.2.7 has no macOS arm64 wheel for 3.11, so it builds from source, and on the macOS 27 SDK its bundled zlib fails (`fdopen` macro). It must also be built against numpy: otherwise `p.isNumpyEnabled()` is 0 and every `getCameraImage` returns ~800k-element Python tuples. Install numpy first, then:
+    ```bash
+    uv pip install numpy pillow setuptools wheel
+    CFLAGS="-Dfdopen=fdopen" CXXFLAGS="-Dfdopen=fdopen" uv pip install --no-build-isolation pybullet
+    python -c "import pybullet as p; print(p.isNumpyEnabled())"   # must print 1
+    ```
 
 - [x] **0.5 PyBullet smoke test.**
   ```bash
@@ -120,26 +125,32 @@ Tell Dhruv the first three: he reads your files and will be affected.
 
 [AGENTS: "bbox, centroid, pixel area, `visible_frac` (render each object alone vs. in the full scene), mean depth."]
 
-- [ ] **3.1 Mask-based facts.** For each object, `mask = seg == seg_id`, then:
+- [x] **3.1 Mask-based facts.** For each object, `mask = seg == seg_id`, then:
   - `pixel_area = mask.sum()`
   - `bbox_2d = [x_min, y_min, x_max, y_max]`. This order matches the AGENTS example `[412, 300, 470, 395]` with centroid `[441, 350]`.
   - `centroid_2d` = mean `[x, y]` of the mask pixels
   - `depth_mean_m` = mean of `depth[mask]`
   - Done when: drawing each bbox and centroid on the RGB image puts them on the right object.
+  - Result: checked by eye on s_000002 (20 objects). Every box hugs its object and every centroid sits on it. bbox max is inclusive, centroid is rounded to int (Decisions table).
 
-- [ ] **3.2 Zero-pixel objects.** Apply your decision from 1.8 when `pixel_area == 0`.
+- [x] **3.2 Zero-pixel objects.** Apply your decision from 1.8 when `pixel_area == 0`.
   - Done when: no crash on a scene with a fully hidden object.
+  - Result: hand-built scene with a 4 cm sphere behind a 10 cm box gives `pixel_area: 0`, `visible_frac: 0.0` and `null` bbox/centroid/depth.
 
-- [ ] **3.3 "Render alone" helper.** Move every other object out of view with `resetBasePositionAndOrientation`, render seg with the same camera, then put them back. Do not call `stepSimulation` in between.
+- [x] **3.3 "Render alone" helper.** Move every other object out of view with `resetBasePositionAndOrientation`, render seg with the same camera, then put them back. Do not call `stepSimulation` in between.
   - Done when: poses after restoring are exactly the poses before.
+  - Result: pose and velocity are bit-identical. Restoring uses `saveState`/`restoreState`, because putting a pose back through `resetBasePositionAndOrientation` shifts the quaternion by ~1e-17.
 
-- [ ] **3.4 `visible_frac`.** `visible_frac = full-scene pixels ÷ alone pixels`. Keep each object's alone-mask; Phase 4 reuses it.
+- [x] **3.4 `visible_frac`.** `visible_frac = full-scene pixels ÷ alone pixels`. Keep each object's alone-mask; Phase 4 reuses it.
   - Done when: an object nothing covers gets about 1.0, a partly hidden one is below 1.0, and no value exceeds 1.0.
+  - Result: over 63 objects in seeds 0–5, 33 are exactly 1.0, 30 fall between 0.50 and 0.99, and none exceed 1.0. A hand-built sliver reads 0.016. The alone-masks are kept in memory for Phase 4.
+  - Cost: one extra render per object. Renders took ~2 s each while the machine was under heavy load (load average 22 on 8 cores), so re-time this in 6.1/6.4.
 
-- [ ] **3.5 Add the fields** `bbox_2d`, `centroid_2d`, `pixel_area`, `visible_frac`, `depth_mean_m` to `objects[]`. [AGENTS]
+- [x] **3.5 Add the fields** `bbox_2d`, `centroid_2d`, `pixel_area`, `visible_frac`, `depth_mean_m` to `objects[]`. [AGENTS]
 
 - [ ] **3.6 Hand off.** Commit, add a log line, tell Dhruv. This unblocks F1, F2, F3 and F4 for him. [AGENTS "Needs from A"]
   Context: he applies the 30% visibility rule and the 3 cm depth-margin rule using these values. [AGENTS]
+  - Status: committed and log line added. **Still to do:** push, then tell Dhruv.
 
 ---
 
