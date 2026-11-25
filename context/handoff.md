@@ -112,6 +112,14 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 | 2026-11-22 | Repo scaffolded; 3 ideas shortlisted | `<name>` | Kickoff |
 | 2026-11-22 | **Idea 1 chosen** + F9/F10 from Idea 3. Idea 2 stays the fallback. | team | Best variation + geometric validation; plays to ER 2 pointing |
 | 2026-11-22 | Renderer = PyBullet. Model I/O in ER-native `[y,x]` 0–1000, stored in pixels. | team | Free masks/depth/physics, no GPU; fair to ER 2 |
+| 2026-11-24 | `parsed` is in storage format: points `[x, y]` pixels, boxes `[x1, y1, x2, y2]` pixels. C converts from the model's `[y, x]` 0–1000. Fixes the `[350, 441]` results example. | lead (proposed by B) | Checker reads `parsed`; one coordinate order everywhere |
+| 2026-11-24 | Answer shapes per `answer_type`: `point`, `bbox`, `count`, `choice`, `bool`, `sequence`, `set` as same-named keys in `parsed` and `reference`. | lead (proposed by B) | C's parser and B's checker agree |
+| 2026-11-24 | Choice/sequence/set questions list lettered options; models answer with letters; `reference.options` maps letter → object id. | lead (proposed by B) | Exact grading without an AI judge |
+| 2026-11-24 | Paths in `scene.json` / `tasks.jsonl` are relative to the data folder (`images/s_000123.png`). | lead (proposed by B) | `--data fixtures/` and `--data data/` both work |
+| 2026-11-24 | F3 counts `visible_frac ≥ 0.10` and drops tasks with a match in (0, 0.10). F6 free-to-pick = nothing rests on it and `visible_frac ≥ 0.30`. | lead (proposed by B) | Fair counting; graspable means visible |
+| 2026-11-24 | F8: `score()` returns raw F1 (partial credit); headline accuracy counts F1 = 1.0 only. | lead (proposed by B) | Docs gave no threshold |
+| 2026-11-24 | Human spot-check results committed as `validate/evidence/human_check_seed<N>.jsonl`. | lead (proposed by B) | `data/` is gitignored; judges need the evidence |
+| 2026-11-24 | Unit tests in `validate/tests/` with pytest and a `make test` target. | lead (proposed by B) | |
 
 ## Open questions
 
@@ -124,4 +132,5 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 ```
 [YYYY-MM-DD HH:MM] <name> (<role>): done: ... | next: ... | blocked on: ...
 [2026-11-24 12:19] Dhruvk2004 (B): done: claimed Role B in AGENTS.md; sent contract questions (parsed coord order, answer shapes, option naming, paths) to lead | next: schema/ + fixtures/ on branch schema/v1-contracts-fixtures | blocked on: none
+[2026-11-24 15:20] Dhruvk2004 (B): done: schema/ (3 JSON Schemas + python -m schema.check --data <dir>), fixtures/ (5 scene files, 16 tasks F1–F10, mock results), validate/tests, AGENTS.md contract updates + Decisions rows for the 8 lead-approved defaults | next: validate/checkers.py | blocked on: team confirming Raj's Role A option-A picks (seg 0/1, 6 colours, 3 shapes, hidden-object nulls) that the schema uses
 ```

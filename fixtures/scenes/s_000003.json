@@ -1,0 +1,233 @@
+{
+  "scene_id": "s_000003",
+  "seed": 3,
+  "generator_version": "fixtures@hand-made-v1",
+  "image_path": "images/s_000003.png",
+  "depth_path": "depth/s_000003.npy",
+  "seg_path": "seg/s_000003.png",
+  "width": 1024,
+  "height": 768,
+  "camera": {
+    "view_matrix": [
+      0.866025,
+      -0.353553,
+      0.353553,
+      0.0,
+      0.5,
+      0.612372,
+      -0.612372,
+      0.0,
+      -0.0,
+      0.707107,
+      0.707107,
+      0.0,
+      -0.0,
+      -0.0,
+      -0.9,
+      1.0
+    ],
+    "proj_matrix": [
+      1.60838,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      2.144507,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      -1.033898,
+      -1.0,
+      0.0,
+      0.0,
+      -0.101695,
+      0.0
+    ],
+    "elevation_deg": 45.0,
+    "azimuth_deg": 30.0
+  },
+  "objects": [
+    {
+      "id": "o1",
+      "seg_id": 2,
+      "shape": "box",
+      "color": "green",
+      "size_cm": [
+        10,
+        10,
+        5
+      ],
+      "pose": {
+        "xyz_m": [
+          -0.04,
+          0.03,
+          0.025
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "bbox_2d": [
+        430,
+        282,
+        556,
+        398
+      ],
+      "centroid_2d": [
+        493,
+        339
+      ],
+      "pixel_area": 9730,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.9148
+    },
+    {
+      "id": "o2",
+      "seg_id": 3,
+      "shape": "box",
+      "color": "red",
+      "size_cm": [
+        6,
+        6,
+        6
+      ],
+      "pose": {
+        "xyz_m": [
+          0.09,
+          0.0,
+          0.03
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.21644,
+          0.976296
+        ]
+      },
+      "bbox_2d": [
+        556,
+        351,
+        619,
+        437
+      ],
+      "centroid_2d": [
+        588,
+        394
+      ],
+      "pixel_area": 5014,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.847
+    },
+    {
+      "id": "o3",
+      "seg_id": 4,
+      "shape": "sphere",
+      "color": "blue",
+      "size_cm": [
+        7,
+        7,
+        7
+      ],
+      "pose": {
+        "xyz_m": [
+          -0.2,
+          -0.1,
+          0.035
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "bbox_2d": [
+        270,
+        319,
+        337,
+        384
+      ],
+      "centroid_2d": [
+        303,
+        352
+      ],
+      "pixel_area": 3478,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.8847
+    },
+    {
+      "id": "o4",
+      "seg_id": 5,
+      "shape": "cylinder",
+      "color": "yellow",
+      "size_cm": [
+        5,
+        5,
+        12
+      ],
+      "pose": {
+        "xyz_m": [
+          0.2,
+          0.12,
+          0.06
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "bbox_2d": [
+        701,
+        280,
+        772,
+        397
+      ],
+      "centroid_2d": [
+        736,
+        338
+      ],
+      "pixel_area": 5751,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.8603
+    }
+  ],
+  "contacts": [
+    {
+      "top": "o1",
+      "bottom": "table"
+    },
+    {
+      "top": "o2",
+      "bottom": "table"
+    },
+    {
+      "top": "o3",
+      "bottom": "table"
+    },
+    {
+      "top": "o4",
+      "bottom": "table"
+    }
+  ],
+  "occludes": [],
+  "counterfactuals": {},
+  "pair": null,
+  "difficulty": {
+    "n_objects": 4,
+    "occlusion": 0.0,
+    "distractors": 1,
+    "lighting": "normal"
+  },
+  "goal": {
+    "object": "o2",
+    "relation": "on",
+    "target": "o1",
+    "success": false
+  }
+}

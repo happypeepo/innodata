@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "result.schema.json",
+  "title": "One line of results/<model>.jsonl (C -> D), contract v1",
+  "description": "parsed is already converted to storage format: points [x, y] and boxes [x1, y1, x2, y2] in pixels. A parse failure has parsed = null and score 0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task_id", "model", "run", "condition", "raw_response", "parsed", "parse_ok", "score",
+               "latency_ms", "tokens_in", "tokens_out", "cost_usd", "error"],
+  "properties": {
+    "task_id": {"type": "string", "pattern": "^t_[0-9]{6}_F(10|[1-9])_[0-9]{2}$"},
+    "model": {"type": "string", "minLength": 1},
+    "run": {"type": "integer", "minimum": 0},
+    "condition": {"enum": ["image", "text_only"]},
+    "raw_response": {"type": "string"},
+    "parsed": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "object", "additionalProperties": false, "required": ["point"],
+         "properties": {"point": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}}},
+        {"type": "object", "additionalProperties": false, "required": ["bbox"],
+         "properties": {"bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4}}},
+        {"type": "object", "additionalProperties": false, "required": ["count"],
+         "properties": {"count": {"type": "integer", "minimum": 0}}},
+        {"type": "object", "additionalProperties": false, "required": ["choice"],
+         "properties": {"choice": {"type": "string", "pattern": "^[A-Z]$"}}},
+        {"type": "object", "additionalProperties": false, "required": ["bool"],
+         "properties": {"bool": {"type": "boolean"}}},
+        {"type": "object", "additionalProperties": false, "required": ["sequence"],
+         "properties": {"sequence": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z]$"}}}},
+        {"type": "object", "additionalProperties": false, "required": ["set"],
+         "properties": {"set": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z]$"}}}}
+      ]
+    },
+    "parse_ok": {"type": "boolean"},
+    "score": {"type": "number", "minimum": 0, "maximum": 1},
+    "latency_ms": {"type": "integer", "minimum": 0},
+    "tokens_in": {"type": "integer", "minimum": 0},
+    "tokens_out": {"type": "integer", "minimum": 0},
+    "cost_usd": {"type": "number", "minimum": 0},
+    "error": {"type": ["string", "null"]}
+  },
+  "if": {"properties": {"parse_ok": {"const": false}}},
+  "then": {"properties": {"parsed": {"type": "null"}, "score": {"const": 0}}}
+}
