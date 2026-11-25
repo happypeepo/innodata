@@ -81,7 +81,11 @@ DEFAULT_RANGES = {
     "distractors": (0, 3),
     "lighting": ("bright", "normal", "dim"),
     "scale": (1.0, 1.0),
+    "stack_frac": (0.0, 0.35),
 }
+
+# A planted (stacked) object lands within this distance of its base object's centre.
+STACK_JITTER_M = 0.01
 
 
 @dataclass
@@ -103,6 +107,7 @@ class Knobs:
     distractors: int
     lighting: str
     scale: float
+    stack_frac: float
 
 
 def draw_knobs(rng: np.random.Generator, ranges: dict) -> Knobs:
@@ -115,7 +120,8 @@ def draw_knobs(rng: np.random.Generator, ranges: dict) -> Knobs:
     k = min(int(rng.integers(lo, hi + 1)), n - 1)
     lighting = ranges["lighting"][rng.integers(len(ranges["lighting"]))]
     scale = round(float(rng.uniform(*ranges["scale"])), 2)
-    return Knobs(n, elevation, azimuth, k, lighting, scale)
+    stack_frac = round(float(rng.uniform(*ranges["stack_frac"])), 2)
+    return Knobs(n, elevation, azimuth, k, lighting, scale, stack_frac)
 
 
 def make_world() -> tuple[int, int, float]:
@@ -213,30 +219,37 @@ def spawn_object(client: int, shape: str, size_cm: list[float], color: str, xyz_
 
 
 def spawn_objects(client: int, rng: np.random.Generator, attrs: list[tuple[str, str]], anchor: int,
-                  top_z: float, scale: float = 1.0) -> list[SceneObject]:
+                  top_z: float, scale: float = 1.0, n_stacked: int = 0) -> list[SceneObject]:
     """Drop one object per (shape, colour) over the spawn area, at random positions and sizes.
 
     Each object starts just above the table, or just above the highest earlier object whose
     footprint it overlaps, so nothing starts interpenetrating and drops stay short.
+    The last n_stacked objects are moved over an earlier box or cylinder so they land on it.
     """
     gap = 0.01
+    n = len(attrs)
     objects = []
-    placed = []  # (x, y, footprint radius, top z) of earlier spawns
+    placed = []  # (x, y, footprint radius, top z, shape) of earlier spawns
     for i, (shape, color) in enumerate(attrs):
         size_cm = draw_size_cm(rng, shape, scale)
         x = rng.uniform(-SPAWN_HALF_X_M, SPAWN_HALF_X_M)
         y = rng.uniform(-SPAWN_HALF_Y_M, SPAWN_HALF_Y_M)
         yaw = rng.uniform(-np.pi, np.pi)
+        bases = [j for j, pl in enumerate(placed) if pl[4] != "sphere"]
+        if i >= n - n_stacked and bases:
+            base = placed[bases[rng.integers(len(bases))]]
+            x = base[0] + rng.uniform(-STACK_JITTER_M, STACK_JITTER_M)
+            y = base[1] + rng.uniform(-STACK_JITTER_M, STACK_JITTER_M)
         sx, sy, sz = (v / 100.0 for v in size_cm)
         radius = float(np.hypot(sx, sy)) / 2
         bottom = top_z + gap
-        for px, py, pr, ptop in placed:
+        for px, py, pr, ptop, _ in placed:
             if np.hypot(x - px, y - py) < radius + pr:
                 bottom = max(bottom, ptop + gap)
         z = bottom + sz / 2
         quat = p.getQuaternionFromEuler([0.0, 0.0, yaw])
         body = spawn_object(client, shape, size_cm, color, [x, y, z], quat)
-        placed.append((x, y, radius, bottom + sz))
+        placed.append((x, y, radius, bottom + sz, shape))
         objects.append(SceneObject(id="", body=body, shape=shape, color=color, size_cm=size_cm,
                                    anchor=i == anchor))
     return objects
@@ -447,7 +460,8 @@ def generate_scene(seed: int, out_dir: str | Path, ranges: dict | None = None) -
         attrs, anchor = draw_attributes(rng, knobs.n_objects, knobs.distractors)
         client, table_id, top_z = make_world()
         try:
-            objects = spawn_objects(client, rng, attrs, anchor, top_z, knobs.scale)
+            objects = spawn_objects(client, rng, attrs, anchor, top_z, knobs.scale,
+                                    int(round(knobs.stack_frac * knobs.n_objects)))
             _, settled = settle(client, objects)
             if not settled:
                 print(f"warning: {scene_id} hit the {MAX_SETTLE_STEPS}-step settle cap", file=sys.stderr)
@@ -483,7 +497,7 @@ def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObj
     """Render a settled world, compute per-object facts, write the files and return scene.json."""
     scene_id = f"s_{seed:06d}"
     if knobs is None:  # hand-built scenes: default camera and light, no planted distractors
-        knobs = Knobs(len(objects), DEFAULT_ELEVATION_DEG, DEFAULT_AZIMUTH_DEG, 0, "normal", 1.0)
+        knobs = Knobs(len(objects), DEFAULT_ELEVATION_DEG, DEFAULT_AZIMUTH_DEG, 0, "normal", 1.0, 0.0)
     elevation_deg, azimuth_deg = knobs.elevation_deg, knobs.azimuth_deg
     for i, o in enumerate(objects):
         o.id = f"o{i + 1}"
@@ -536,6 +550,7 @@ def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObj
             "distractors": count_distractors(objects),
             "lighting": knobs.lighting,
             "scale": knobs.scale,
+            "stacked": len({c["top"] for c in contacts if c["bottom"] != "table"}),
         },
     }
     (out / f"scenes/{scene_id}.json").write_text(json.dumps(scene, indent=2) + "\n")

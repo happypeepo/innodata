@@ -33,17 +33,21 @@ def main() -> None:
     ap.add_argument("--lighting", nargs="+", choices=sorted(scene.LIGHTING), default=d["lighting"])
     ap.add_argument("--scale-range", type=float, nargs=2, metavar=("LO", "HI"), default=d["scale"],
                     help="multiplier on object sizes")
+    ap.add_argument("--stack-frac", type=float, nargs=2, metavar=("LO", "HI"), default=d["stack_frac"],
+                    help="share of objects dropped onto an earlier box/cylinder")
     args = ap.parse_args()
 
     for name, (lo, hi) in [("--n-objects", args.n_objects), ("--elevation", args.elevation),
                            ("--azimuth", args.azimuth), ("--distractors", args.distractors),
-                           ("--scale-range", args.scale_range)]:
+                           ("--scale-range", args.scale_range), ("--stack-frac", args.stack_frac)]:
         if lo > hi:
             ap.error(f"{name}: LO must be <= HI")
     if not 1 <= args.n_objects[0] <= args.n_objects[1] <= 254:
         ap.error("--n-objects must lie in 1..254 (8-bit seg PNG)")
     if args.distractors[0] < 0:
         ap.error("--distractors must be >= 0")
+    if not 0.0 <= args.stack_frac[0] <= args.stack_frac[1] <= 1.0:
+        ap.error("--stack-frac must lie in 0..1")
     if args.workers < 1:
         ap.error("--workers must be >= 1")
 
@@ -54,6 +58,7 @@ def main() -> None:
         "distractors": tuple(args.distractors),
         "lighting": tuple(args.lighting),
         "scale": tuple(args.scale_range),
+        "stack_frac": tuple(args.stack_frac),
     }
     start = time.time()
     seeds = [args.seed + i for i in range(args.n)]
