@@ -18,6 +18,7 @@ class Adapter:
     """`parts` is the user turn in order: ("text", str) or ("image", Path). Same for every model."""
 
     name = "base"
+    model_id = "base"  # written to results rows and used as the results file name
 
     def ask(self, system: str, parts: list[tuple[str, str | Path]], *, task: dict, condition: str,
             run: int) -> Reply:
