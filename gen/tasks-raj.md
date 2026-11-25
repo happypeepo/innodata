@@ -209,6 +209,7 @@ Tell Dhruv the first three: he reads your files and will be affected.
   - Done when: 300 complete scenes exist and the time is about 15 minutes or less.
   - Result: 300 complete scenes in 676 s (11.3 min) with 8 workers, while the machine was partly busy (load ~5). A re-run after the schema fix took 462 s (7.7 min). 11 scenes hit the settle cap and were rendered with a warning, as decided. `data/` is 1.0 GB, mostly float32 depth `.npy` files (3 MB each).
   - Contents: 3,571 objects, 3–20 per scene (median 12). Lighting, shapes and colours are about even. Scene occlusion runs 0–1.0 (median 0.35). 25 objects are fully hidden. One scene (s_000170) had its distractor anchor fall off; it is now rebuilt from the same rng stream, so `distractors` is always an integer. Only 221 object-on-object contacts across 300 scenes, so stacking is thin for F5/F7.
+  - Follow-up (2026-11-25): added the `--stack-frac` knob (Decisions table). The regenerated 300 scenes now have 631 object-on-object contacts, 87% of scenes with a stack, 21% with a 3-high chain, and a tallest chain of 5. Median scene occlusion rose to 0.54. The run took 812 s (13.5 min), but the machine's load average was 66–190 at the time, so re-time on a quiet machine (it was 7.7 min before the knob). It still passes `schema.check` and `gen.check` 300/300, and re-runs are byte-identical.
 
 - [x] **6.2 Determinism at scale.** Run it again into a second folder and compare hashes of all files.
   - Done when: everything matches.
