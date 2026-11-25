@@ -14,6 +14,7 @@ OPTION_LETTER = re.compile(r"(?:^|\s)([A-Z])\) ")
 
 class Mock(Adapter):
     name = "mock"
+    model_id = "mock"
 
     def __init__(self, seed: int = 0):
         self.seed = seed

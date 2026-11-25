@@ -1,6 +1,6 @@
 # Role C (Eval Harness): implementation plan
 
-> Owner: `@happypeepo`. Status: **approved 2026-11-25**, Phase 0 + Phase 1 done. Branch: `eval/harness`.
+> Owner: `@happypeepo`. Status: **approved 2026-11-25**, Phase 0–2 done (Phase 2 live pilot waits for API keys). Branch: `eval/harness`.
 > Contracts this builds on: `AGENTS.md` (v1) + B's `schema/result.schema.json` and `validate/checkers.py` (PR #1, #2).
 
 ## 1. Where the project stands (2026-11-25)
@@ -104,9 +104,16 @@ Phase 1 notes:
 - `cost_usd` is 0 until `pricing.py` lands in Phase 2.
 
 ### Phase 2: real models (~3 h)
-- [ ] `gemini.py` (ER 2 + generalist; thinking-budget option), `anthropic.py`, `openai.py`, each with token counts from the response
-- [ ] Retry/backoff, concurrency limit, `error` field, `--budget-usd`, `--dry-run` with `pricing.py`
-- [ ] One live call per adapter on 3 fixture tasks (pennies). Eyeball raw responses and fix prompt/parse issues **before** freezing the prompt (bump `prompt_version`).
+- [x] `gemini_adapter.py` (ER 2 + generalist; `--thinking-budget`), `anthropic_adapter.py`, `openai_adapter.py`, each with token counts from the response (tested against fake clients)
+- [x] Retry/backoff, concurrency limit, `error` field, `--budget-usd`, `--dry-run` with `pricing.py`
+- [ ] **(waiting for keys)** One live call per adapter on 3 fixture tasks (pennies). Eyeball raw responses and fix prompt/parse issues **before** freezing the prompt (bump `prompt_version`).
+
+Phase 2 notes:
+- **Defaults applied (D1, D9, 2026-11-26):** `--model er2` → `gemini-robotics-er-2-preview`, `gemini-pro` → `gemini-3.1-pro-preview`, `claude` → `claude-opus-5-5`, `gpt` → `gpt-6.1-sol`. Override any of them with `--model-id`. Team budget **$100**, posting in the handoff at $70. **VERIFY the gemini-pro and gpt ids and all prices** before the paid run: third-party listings disagree, and where they conflict `eval/pricing.py` uses the higher price. A wrong id fails on the first call (404, not retried).
+- **D12 (new): sampling = provider defaults, no temperature 0.** Several current models reject or advise against temperature 0 (reasoning models, Gemini 3). The 3× repeats on the 100-task subset measure the variance instead. Recorded in `meta.json`.
+- Retries: 408/429/5xx/timeouts/connection errors, 5 tries, back-off 2,4,8,16 s + jitter. 400/401/404 fail at once.
+- `--budget-usd` caps **this invocation**. Calls after the cap fail with `BudgetExceeded`, aren't cached, and run next time. `total_cost_usd` in `meta.json` is the running total across runs.
+- Rough cost for the full plan from `--dry-run` maths (~1,000 tasks, 4 models, image + text-only, 3× repeats on 100): **~$30–60** before thinking tokens. The pilot replaces the guesses.
 
 ### Phase 3: real run (CP2 → CP3)
 - [ ] Generate 300 scenes + tasks locally (D8), freeze `tasks.jsonl`, stratified `subset_100.txt`
