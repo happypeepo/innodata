@@ -17,7 +17,8 @@ smoke:
 		echo "+ tasks"; $(PYTHON) -m tasks --data fixtures/ --seed $(SEED) --out $(SMOKE)/tasks.jsonl || exit 1; \
 	else echo "- tasks: not on main yet, skipped"; fi
 	@if [ -f eval/__main__.py ]; then \
-		echo "+ eval (mock)"; $(PYTHON) -m eval --model mock --data fixtures/ --tasks $(SMOKE)/tasks.jsonl --out $(SMOKE)/results || exit 1; \
+		T=$(SMOKE)/tasks.jsonl; [ -f $$T ] || T=fixtures/tasks.jsonl; \
+		echo "+ eval (mock) on $$T"; $(PYTHON) -m eval --model mock --data fixtures/ --tasks $$T --out $(SMOKE)/results --condition image --condition text_only || exit 1; \
 	else echo "- eval: not on main yet, skipped"; fi
 	@if [ -f report/__main__.py ]; then \
 		echo "+ report"; $(PYTHON) -m report --results $(SMOKE)/results --out $(SMOKE)/report || exit 1; \
