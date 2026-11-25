@@ -1,6 +1,6 @@
 # Role C (Eval Harness): implementation plan
 
-> Owner: `@happypeepo`. Status: **approved 2026-11-25**, Phase 0 done. Branch: `eval/harness`.
+> Owner: `@happypeepo`. Status: **approved 2026-11-25**, Phase 0 + Phase 1 done. Branch: `eval/harness`.
 > Contracts this builds on: `AGENTS.md` (v1) + B's `schema/result.schema.json` and `validate/checkers.py` (PR #1, #2).
 
 ## 1. Where the project stands (2026-11-25)
@@ -89,13 +89,19 @@ Output: `data/results/<model>.jsonl` (one row per task × condition × run, vali
 - [x] `requirements.txt`: add `google-genai`, `anthropic`, `openai`, `python-dotenv`. `.env.example` with the key names (no values).
 
 ### Phase 1: harness on fixtures, no API keys (~3 h)
-- [ ] `models/base.py` + `models/mock.py` (seeded, valid answers in model format: `[y, x]` 0–1000, letters, etc.)
-- [ ] `prompt.py` + `prompt_hash`. Test: every fixture task gets a prompt, F10 gets 2 images.
-- [ ] `parse.py` + tests: fences, prose around JSON, ER list-of-points form, swapped/missing keys, out-of-range, `[y,x]`→`[x,y]` maths on a known pixel, bbox order
-- [ ] `cache.py` + resume test: kill halfway, rerun, no repeated calls
-- [ ] `__main__.py`: writes `results/<model>.jsonl` + `meta.json`. **Every row passes `python -m schema.check`.**
-- [ ] End-to-end test: mock on fixtures → rescoring rows with `score()` matches the stored scores
-- [ ] `make smoke` green. Open PR `eval/harness` → main.
+- [x] `models/base.py` + `models/mock.py` (seeded, valid answers in model format: `[y, x]` 0–1000, letters, etc.)
+- [x] `prompt.py` + `prompt_hash`. Test: every fixture task gets a prompt, F10 gets 2 images.
+- [x] `parse.py` + tests: fences, prose around JSON, ER list-of-points form, swapped/missing keys, out-of-range, `[y,x]`→`[x,y]` maths on a known pixel, bbox order
+- [x] `cache.py` + resume test: kill halfway, rerun, no repeated calls
+- [x] `__main__.py`: writes `results/<model>.jsonl` + `meta.json`. **Every row passes `python -m schema.check`.**
+- [x] End-to-end test: mock on fixtures → rescoring rows with `score()` matches the stored scores
+- [x] `make smoke` green. Open PR `eval/harness` → main.
+
+Phase 1 notes:
+- Rows are validated against `schema/result.schema.json` inside `python -m eval` itself, because `schema.check` only looks in `<data>/results/`.
+- `text_only` adds one line, *"(The image is not available. Give your best guess in the required format.)"*, so models guess instead of refusing. Otherwise the no-image baseline would measure refusals, not guessing.
+- The results file is **rebuilt from the cache** on every run (all conditions and runs so far, current prompt only). A parser fix just needs a rerun, with no API calls.
+- `cost_usd` is 0 until `pricing.py` lands in Phase 2.
 
 ### Phase 2: real models (~3 h)
 - [ ] `gemini.py` (ER 2 + generalist; thinking-budget option), `anthropic.py`, `openai.py`, each with token counts from the response
