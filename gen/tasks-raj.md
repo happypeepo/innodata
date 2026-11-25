@@ -16,8 +16,9 @@ Branch: `gen/scene-generator` (created from `main` at `f142509`), following the 
 - [x] **0.1 Read the two docs.** Read `AGENTS.md` and `context/handoff.md` fully. [AGENTS: "read before you start"]
   - Done when: you know the `scene.json` contract and the validity rules.
 
-- [ ] **0.2 Claim Role A.** In `AGENTS.md`, replace `<NAME_A>` in the roles table with your name. Commit and push. [AGENTS: "Claim a role by putting your name in the table and pushing"]
+- [x] **0.2 Claim Role A.** In `AGENTS.md`, replace `<NAME_A>` in the roles table with your name. Commit and push. [AGENTS: "Claim a role by putting your name in the table and pushing"]
   - Done when: the roles table on GitHub shows you as A.
+  - Result: claim commit 7014db1 fast-forwarded `main` on 2026-11-25. It was pushed as `Raj-Shah19` over the personal SSH key, since the work account `raj-cometchat` has read-only access.
 
 - [x] **0.3 Install Python 3.11.** [AGENTS: Python 3.11]
   This Mac has Python 3.13 (Homebrew) and `uv`, but no 3.11.
@@ -150,7 +151,7 @@ Tell Dhruv the first three: he reads your files and will be affected.
 
 - [ ] **3.6 Hand off.** Commit, add a log line, tell Dhruv. This unblocks F1, F2, F3 and F4 for him. [AGENTS "Needs from A"]
   Context: he applies the 30% visibility rule and the 3 cm depth-margin rule using these values. [AGENTS]
-  - Status: committed and log line added. **Still to do:** push, then tell Dhruv.
+  - Status: committed, log line added, pushed on `gen/scene-generator` (2026-11-25). **Still to do:** tell Dhruv (Raj).
 
 ---
 
@@ -170,7 +171,7 @@ Tell Dhruv the first three: he reads your files and will be affected.
 - [x] **4.3 Add `contacts` and `occludes`** to `scene.json`.
 
 - [ ] **4.4 Hand off.** Commit, add a log line, tell Dhruv. This unblocks F5, F6 and F7. [AGENTS]
-  - Status: committed and log line added. **Still to do:** push, then tell Dhruv.
+  - Status: committed, log line added, pushed on `gen/scene-generator` (2026-11-25). **Still to do:** tell Dhruv (Raj).
 
 ---
 
