@@ -3,6 +3,9 @@
 Scene i (0-based) uses seed = --seed + i. Each knob flag is a range; every scene draws its own
 values from it (pass the same number twice to pin a value). Scenes are independent, so they run
 in parallel worker processes; the output does not depend on --workers.
+
+The folder's manifest.json records the knob ranges and each run. Generating into a folder whose
+manifest has other ranges is refused, so one scene_id always means one scene in that folder.
 """
 
 import argparse
@@ -60,6 +63,10 @@ def main() -> None:
         "scale": tuple(args.scale_range),
         "stack_frac": tuple(args.stack_frac),
     }
+    try:
+        scene.check_manifest(args.out, ranges)
+    except ValueError as e:
+        ap.error(str(e))
     start = time.time()
     seeds = [args.seed + i for i in range(args.n)]
     ctx = multiprocessing.get_context("spawn")
@@ -68,6 +75,7 @@ def main() -> None:
         for done, future in enumerate(as_completed(futures), 1):
             scene_id, n_objects, secs = future.result()
             print(f"[{done}/{args.n}] {scene_id} {n_objects} objects {secs:.1f}s", file=sys.stderr)
+    scene.record_run(args.out, ranges, args.seed, args.n)
     print(f"done: {args.n} scenes in {time.time() - start:.1f}s -> {args.out}", file=sys.stderr)
 
 

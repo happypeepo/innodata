@@ -4,6 +4,13 @@ Conventions (see the Decisions table in context/handoff.md):
 - seg PNG: 8-bit, 0 = nothing or floor, 1 = table, objects 2, 3, ...
 - colours, shapes and size ranges below are the agreed lists.
 - paths in scene.json are relative to the data folder.
+
+Rebuilding a scene (e.g. for counterfactuals or before/after pairs):
+
+    with build_scene(seed, load_ranges("data/")) as sim:   # the settled world scene.json describes
+        ...                                                # sim.objects carry scene.json's ids
+        settle(sim)                                        # False if it hit the step cap
+        rgb, depth, seg = render(sim)                      # same camera and light as the scene
 """
 
 from __future__ import annotations
@@ -108,6 +115,36 @@ class Knobs:
     lighting: str
     scale: float
     stack_frac: float
+
+
+@dataclass
+class Sim:
+    """A built, settled scene: what build_scene returns and settle/render/write_scene take.
+
+    objects carry the ids and seg_ids scene.json uses (fallen objects already removed).
+    knobs=None means a hand-built scene: default camera and light, no planted distractors.
+    Use it as a context manager, or call close(), to disconnect the physics client.
+    """
+    seed: int
+    client: int
+    table_id: int
+    top_z: float
+    objects: list[SceneObject]
+    knobs: Knobs | None = None
+    settled: bool = True  # False if the last settle hit MAX_SETTLE_STEPS
+
+    @property
+    def scene_id(self) -> str:
+        return f"s_{self.seed:06d}"
+
+    def close(self) -> None:
+        p.disconnect(physicsClientId=self.client)
+
+    def __enter__(self) -> Sim:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
 
 def draw_knobs(rng: np.random.Generator, ranges: dict) -> Knobs:
@@ -255,7 +292,7 @@ def spawn_objects(client: int, rng: np.random.Generator, attrs: list[tuple[str, 
     return objects
 
 
-def settle(client: int, objects: list[SceneObject]) -> tuple[int, bool]:
+def settle_objects(client: int, objects: list[SceneObject]) -> tuple[int, bool]:
     """Step until every object is still for STILL_STEPS in a row. Returns (steps, settled)."""
     still_for = 0
     for step in range(1, MAX_SETTLE_STEPS + 1):
@@ -270,6 +307,19 @@ def settle(client: int, objects: list[SceneObject]) -> tuple[int, bool]:
         if still_for >= STILL_STEPS:
             return step, True
     return MAX_SETTLE_STEPS, False
+
+
+def settle(sim: Sim) -> bool:
+    """Settle the scene with the agreed stillness rule; False if it hit the step cap."""
+    _, sim.settled = settle_objects(sim.client, sim.objects)
+    return sim.settled
+
+
+def assign_ids(objects: list[SceneObject]) -> None:
+    """o1, o2, ... and seg_ids 2, 3, ... in list order, as written to scene.json."""
+    for i, o in enumerate(objects):
+        o.id = f"o{i + 1}"
+        o.seg_id = SEG_FIRST_OBJECT + i
 
 
 def remove_fallen(client: int, objects: list[SceneObject], top_z: float) -> list[SceneObject]:
@@ -292,7 +342,7 @@ def camera_matrices(top_z: float, elevation_deg: float, azimuth_deg: float) -> t
     return list(view), list(proj)
 
 
-def render(client: int, view, proj, lighting: str | None = None):
+def render_raw(client: int, view, proj, lighting: str | None = None):
     """Return (rgb uint8 HxWx3, depth metres float32 HxW, raw body-id seg int32 HxW).
 
     lighting=None uses the renderer's cheap unshadowed default (enough for seg-only renders).
@@ -305,6 +355,25 @@ def render(client: int, view, proj, lighting: str | None = None):
     depth = (CAM_FAR_M * CAM_NEAR_M / (CAM_FAR_M - (CAM_FAR_M - CAM_NEAR_M) * zbuf)).astype(np.float32)
     seg = np.reshape(np.asarray(seg, dtype=np.int32), (HEIGHT, WIDTH))
     return rgb, depth, seg
+
+
+def sim_knobs(sim: Sim) -> Knobs:
+    if sim.knobs is not None:
+        return sim.knobs
+    return Knobs(len(sim.objects), DEFAULT_ELEVATION_DEG, DEFAULT_AZIMUTH_DEG, 0, "normal", 1.0, 0.0)
+
+
+def render(sim: Sim, camera: dict | None = None):
+    """Return (rgb uint8 HxWx3, depth metres float32 HxW, seg uint8 HxW in our seg values).
+
+    camera=None uses the scene's own camera; otherwise a dict with elevation_deg and azimuth_deg
+    (scene.json's "camera" block works). The light is always the scene's own preset.
+    """
+    knobs = sim_knobs(sim)
+    cam = camera or {"elevation_deg": knobs.elevation_deg, "azimuth_deg": knobs.azimuth_deg}
+    view, proj = camera_matrices(sim.top_z, cam["elevation_deg"], cam["azimuth_deg"])
+    rgb, depth, seg_raw = render_raw(sim.client, view, proj, knobs.lighting)
+    return rgb, depth, remap_seg(seg_raw, sim.table_id, sim.objects)
 
 
 def remap_seg(seg_raw: np.ndarray, table_id: int, objects: list[SceneObject]) -> np.ndarray:
@@ -449,9 +518,48 @@ def git_version() -> str:
     return f"gen@{sha}"
 
 
-def generate_scene(seed: int, out_dir: str | Path, ranges: dict | None = None) -> dict:
-    """Build, settle and render one scene; write its files under out_dir and return scene.json."""
-    out = Path(out_dir)
+MANIFEST = "manifest.json"
+
+
+def ranges_json(ranges: dict | None) -> dict:
+    """The full knob ranges (defaults filled in) as JSON lists, in DEFAULT_RANGES order."""
+    full = {**DEFAULT_RANGES, **(ranges or {})}
+    return {k: list(full[k]) for k in DEFAULT_RANGES}
+
+
+def load_ranges(data_dir: str | Path) -> dict:
+    """The knob ranges a data folder was generated with, from its manifest.json."""
+    manifest = json.loads((Path(data_dir) / MANIFEST).read_text())
+    return {k: tuple(v) for k, v in manifest["ranges"].items()}
+
+
+def check_manifest(data_dir: str | Path, ranges: dict | None) -> None:
+    """Raise if the folder was generated with other knob ranges: one scene_id must mean one scene."""
+    path = Path(data_dir) / MANIFEST
+    if path.is_file():
+        existing = json.loads(path.read_text())["ranges"]
+        if existing != ranges_json(ranges):
+            raise ValueError(f"{path} was generated with other knob ranges: {existing}. "
+                             "Use another --out folder, or delete this one first.")
+
+
+def record_run(data_dir: str | Path, ranges: dict | None, seed: int, n: int) -> None:
+    """Add a finished run (first seed, count, generator version) to the folder's manifest.json."""
+    check_manifest(data_dir, ranges)
+    path = Path(data_dir) / MANIFEST
+    manifest = json.loads(path.read_text()) if path.is_file() else {"ranges": ranges_json(ranges), "runs": []}
+    manifest["runs"].append({"seed": seed, "n": n, "generator_version": git_version()})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2) + "\n")
+
+
+def build_scene(seed: int, ranges: dict | None = None) -> Sim:
+    """Rebuild the settled world for one seed, exactly as scene.json describes it.
+
+    ranges must be the run's knob ranges (load_ranges(data_dir) reads them from manifest.json):
+    the knobs are drawn from the scene's rng before the objects, so other ranges give a different
+    scene. The caller owns the returned Sim and must close it.
+    """
     scene_id = f"s_{seed:06d}"
     rng = make_rng(seed)
     knobs = draw_knobs(rng, {**DEFAULT_RANGES, **(ranges or {})})
@@ -462,16 +570,25 @@ def generate_scene(seed: int, out_dir: str | Path, ranges: dict | None = None) -
         try:
             objects = spawn_objects(client, rng, attrs, anchor, top_z, knobs.scale,
                                     int(round(knobs.stack_frac * knobs.n_objects)))
-            _, settled = settle(client, objects)
-            if not settled:
+            sim = Sim(seed, client, table_id, top_z, objects, knobs)
+            if not settle(sim):
                 print(f"warning: {scene_id} hit the {MAX_SETTLE_STEPS}-step settle cap", file=sys.stderr)
-            objects = remove_fallen(client, objects, top_z)
-            if any(o.anchor for o in objects):
-                return write_scene(client, table_id, top_z, objects, seed, out, knobs)
-            print(f"note: {scene_id} distractor anchor fell off the table; rebuilding", file=sys.stderr)
-        finally:
+            sim.objects = remove_fallen(client, objects, top_z)
+            if any(o.anchor for o in sim.objects):
+                assign_ids(sim.objects)
+                return sim
+        except BaseException:
             p.disconnect(physicsClientId=client)
+            raise
+        sim.close()
+        print(f"note: {scene_id} distractor anchor fell off the table; rebuilding", file=sys.stderr)
     raise RuntimeError(f"{scene_id}: distractor anchor fell off the table {MAX_BUILD_ATTEMPTS} times")
+
+
+def generate_scene(seed: int, out_dir: str | Path, ranges: dict | None = None) -> dict:
+    """Build, settle and render one scene; write its files under out_dir and return scene.json."""
+    with build_scene(seed, ranges) as sim:
+        return write_scene(sim, Path(out_dir))
 
 
 def count_distractors(objects: list[SceneObject]) -> int | None:
@@ -492,19 +609,15 @@ def generate_scene_timed(seed: int, out_dir: str | Path, ranges: dict | None = N
     return scene["scene_id"], len(scene["objects"]), time.time() - t0
 
 
-def write_scene(client: int, table_id: int, top_z: float, objects: list[SceneObject], seed: int,
-                out: Path, knobs: Knobs | None = None) -> dict:
+def write_scene(sim: Sim, out: Path) -> dict:
     """Render a settled world, compute per-object facts, write the files and return scene.json."""
-    scene_id = f"s_{seed:06d}"
-    if knobs is None:  # hand-built scenes: default camera and light, no planted distractors
-        knobs = Knobs(len(objects), DEFAULT_ELEVATION_DEG, DEFAULT_AZIMUTH_DEG, 0, "normal", 1.0, 0.0)
+    client, table_id, objects, seed, scene_id = sim.client, sim.table_id, sim.objects, sim.seed, sim.scene_id
+    knobs = sim_knobs(sim)
     elevation_deg, azimuth_deg = knobs.elevation_deg, knobs.azimuth_deg
-    for i, o in enumerate(objects):
-        o.id = f"o{i + 1}"
-        o.seg_id = SEG_FIRST_OBJECT + i
+    assign_ids(objects)
 
-    view, proj = camera_matrices(top_z, elevation_deg, azimuth_deg)
-    rgb, depth, seg_raw = render(client, view, proj, knobs.lighting)
+    view, proj = camera_matrices(sim.top_z, elevation_deg, azimuth_deg)
+    rgb, depth, seg_raw = render_raw(client, view, proj, knobs.lighting)
     seg = remap_seg(seg_raw, table_id, objects)
     contacts = contact_graph(client, table_id, objects)  # before render_alone_masks moves bodies around
     alone = render_alone_masks(client, objects, view, proj)
