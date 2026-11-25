@@ -15,7 +15,7 @@ Roster: `@happypeepo`, `@Dhruvk2004`, `@hritz23`, `@Raj-Shah19`. **Claim a role 
 |---|---|---|---|
 | **A — Scene Generator** | `@Raj-Shah19` | `gen/` | Rendered images + masks + depth + `scene.json` per scene |
 | **B — Tasks & Validation** | `@Dhruvk2004` | `tasks/`, `validate/`, `schema/`, `fixtures/` | Question templates, reference answers, checkers, validation evidence |
-| **C — Eval Harness** | `<NAME_C>` | `eval/` | Model runners, prompt formats, response parsing, scoring, cost log |
+| **C — Eval Harness** | `@happypeepo` | `eval/` | Model runners, prompt formats, response parsing, scoring, cost log |
 | **D — Analysis & Story** | `<NAME_D>` | `report/`, `docs/`, `README.md` | Breakdowns, charts, failure gallery, demo, write-up, pitch |
 
 Shared (edit by PR, tag the owner): `Makefile`, `requirements.txt`, `context/`.
@@ -124,7 +124,7 @@ Shared (edit by PR, tag the owner): `Makefile`, `requirements.txt`, `context/`.
 def score(task: dict, parsed: dict, scene: dict) -> float:  # 0.0..1.0, coords already in pixels
 ```
 F8 (`set_f1`) returns the raw F1 as partial credit. Headline accuracy counts only exact matches (F1 = 1.0).
-Until B ships it, C uses `eval/checkers_stub.py` with the same signature (exact-match only) and switches to the real one with a one-line import change.
+Shipped in PR #2 (on `main`). C imports it directly; there is no stub.
 
 ### 4. `results.jsonl` (C → D), one row per (task, model, run), in `data/results/<model>.jsonl`
 ```json
