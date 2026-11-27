@@ -1,7 +1,7 @@
 """Accuracy breakdowns from results.jsonl files: model x family, model x difficulty knob,
 image vs text-only gap, run-to-run spread, cost and latency. Bootstrap 95% CIs over tasks.
 
-    python -m report --results data/results/ [--tasks data/tasks.jsonl] [--out report/out]
+    python -m report --results data/results/ [--tasks data/tasks.jsonl] [--data data/] [--out report/out]
 
 Headline accuracy counts a task as right only when score == 1.0, so F8's partial-credit
 set-F1 counts only when exact (Decisions table, 2026-11-24). `mean_score` keeps the partial credit.
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-from report import charts
+from report import charts, gallery
 
 N_BOOT = 2000
 CONDITIONS = ("image", "text_only")
@@ -57,6 +57,17 @@ def find_tasks(results_dir: Path, tasks: Path | None) -> Path | None:
             return Path(recorded)
     guess = results_dir.parent / "tasks.jsonl"
     return guess if guess.exists() else None
+
+
+def find_data(results_dir: Path, data: Path | None) -> Path | None:
+    """--data, else the data folder eval recorded in <model>.meta.json, else <results>/.. if it holds scenes/."""
+    if data:
+        return data
+    for meta in sorted(results_dir.glob("*.meta.json")):
+        recorded = json.loads(meta.read_text()).get("data")
+        if recorded and (Path(recorded) / "scenes").is_dir():
+            return Path(recorded)
+    return results_dir.parent if (results_dir.parent / "scenes").is_dir() else None
 
 
 def join(rows: list[dict], tasks: list[dict]) -> list[dict]:
@@ -263,6 +274,12 @@ def markdown(s: dict, inputs: dict) -> str:
                   "|---|---|---|---|---|---|---|"]
         lines += [f"| {r['model']} | {r['condition']} | {r['n_runs']} | {r['n_tasks']} | {_pct(r['mean'])} | "
                   f"{100 * r['std']:.1f} pts | {_pct(r['min'])}–{_pct(r['max'])} |" for r in s["runs"]]
+    if s.get("failure_types"):
+        kinds = [k for k in gallery.ORDER if any(f["type"] == k for f in s["failure_types"])]
+        n = {(f["model"], f["type"]): f["n"] for f in s["failure_types"]}
+        lines += ["", "## Failure types (image, run 0)", "", "| Failure | " + " | ".join(s["models"]) + " |",
+                  "|---" * (len(s["models"]) + 1) + "|"]
+        lines += [f"| {k} | " + " | ".join(str(n.get((m, k), 0)) for m in s["models"]) + " |" for k in kinds]
     lines += ["", "## Cost and latency", "", "| Model | Calls | Errors | Cost (USD) | Tokens in | Tokens out | Median latency |",
               "|---|---|---|---|---|---|---|"]
     lines += [f"| {c['model']} | {c['calls']} | {c['errors']} | ${c['cost_usd']:.2f} | {c['tokens_in']:,} | "
@@ -274,7 +291,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--results", type=Path, required=True, help="folder of <model>.jsonl files")
     ap.add_argument("--tasks", type=Path, help="tasks.jsonl (default: the one in <model>.meta.json)")
+    ap.add_argument("--data", type=Path, help="scenes/images/seg for the failure gallery (default: from meta.json)")
     ap.add_argument("--out", type=Path, default=Path("report/out"))
+    ap.add_argument("--gallery-per-type", type=int, default=6)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--n-boot", type=int, default=N_BOOT)
     args = ap.parse_args(argv)
@@ -284,14 +303,24 @@ def main(argv=None) -> int:
         print(f"no results in {args.results}", file=sys.stderr)
         return 1
     tasks_file = find_tasks(args.results, args.tasks)
-    rows = join(raw, read_jsonl(tasks_file) if tasks_file else [])
+    tasks = read_jsonl(tasks_file) if tasks_file else []
+    rows = join(raw, tasks)
     s = analyse(rows, args.seed, args.n_boot)
+    data = find_data(args.results, args.data)
     inputs = {"results_files": [p.name for p in sorted(args.results.glob("*.jsonl"))],
-              "tasks_file": str(tasks_file) if tasks_file else None, "n_rows": len(rows)}
+              "tasks_file": str(tasks_file) if tasks_file else None, "data": str(data) if data else None,
+              "n_rows": len(rows)}
 
     args.out.mkdir(parents=True, exist_ok=True)
+    s["gallery"], s["failure_types"] = [], []
+    if data and tasks:
+        s["gallery"], s["failure_types"] = gallery.build(rows, {t["task_id"]: t for t in tasks}, data, args.out,
+                                                         args.gallery_per_type)
+    else:
+        print("report: no data folder or tasks file found, failure gallery skipped (pass --data/--tasks)",
+              file=sys.stderr)
     (args.out / "summary.json").write_text(json.dumps({"inputs": inputs, **s}, indent=2) + "\n")
-    for name in ("overall", "by_family", "by_knob", "gap", "runs", "cost"):
+    for name in ("overall", "by_family", "by_knob", "gap", "runs", "cost", "failure_types"):
         write_csv(args.out / f"{name}.csv", s[name])
     md = markdown(s, inputs)
     (args.out / "summary.md").write_text(md)

@@ -45,6 +45,12 @@ table { border-collapse: collapse; font-size: 12px; margin: 8px 0 16px; font-var
 th, td { border-bottom: 1px solid var(--grid); padding: 4px 10px; text-align: left; white-space: nowrap; }
 th { color: var(--ink-2); font-weight: 600; }
 code { font-size: 12px; }
+:root { --ref: #1baf7a; --model: #eb6834; }
+h3.kind { font-size: 14px; margin: 20px 0 4px; } h3.kind span { color: var(--muted); font-weight: 400; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.gallery figure { margin: 0; padding: 8px; } .gallery img { width: 100%%; border-radius: 4px; display: block; }
+.gallery figcaption { font-size: 12px; color: var(--ink-2); margin-top: 6px; }
+.gallery .lab { color: var(--muted); display: inline-block; min-width: 64px; }
 """
 
 TIP_JS = """
@@ -221,6 +227,23 @@ def page(s: dict, md: str) -> str:
                           + line_chart(bins, series, slots) + "</div>")
     if knob_cards:
         parts += ["<h2>Difficulty</h2>", key, "<div class='multiples'>", *knob_cards, "</div>"]
+
+    if s.get("gallery"):
+        parts.append("<h2>Failure gallery</h2><p>Wrong answers on the image, first run. "
+                     "<b style='color:var(--ref)'>Aqua</b>: reference (mask, box, or the objects the question is about). "
+                     "<b style='color:var(--model)'>Orange</b>: the model's point or box.</p>")
+        kind = None
+        for g in s["gallery"]:
+            if g["type"] != kind:
+                if kind is not None:
+                    parts.append("</div>")
+                kind = g["type"]
+                parts.append(f"<h3 class='kind'>{esc(kind)} <span>({g['count']} in total)</span></h3><div class='gallery'>")
+            parts.append(f"<figure class='card'><img src='{esc(g['image'])}' alt='{esc(g['question'])}' loading='lazy'>"
+                         f"<figcaption><b>{esc(g['family'])}</b> · {esc(g['model'])} · <code>{esc(g['task_id'])}</code>"
+                         f"<br>{esc(g['question'])}<br><span class='lab'>Model</span> {esc(g['answer'])}"
+                         f"<br><span class='lab'>Reference</span> {esc(g['reference'])}</figcaption></figure>")
+        parts.append("</div>")
 
     parts += ["<h2>Tables</h2><div class='tables'>", md_to_html(md), "</div>",
               f"</main><div id='tip'></div><script>{TIP_JS}</script></body></html>"]
