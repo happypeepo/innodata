@@ -246,9 +246,16 @@ Tell Dhruv the first three: he reads your files and will be affected.
 
 Role A owns and fills `counterfactuals` (F8), `goal` (F9) and `pair` (F10) in `scene.json`. B's generators read them. This follows Dhruv's proposal on PR #9 and A's checklist in `AGENTS.md`. Targets: **F8 by 28 Nov, F9 + F10 by 30 Nov.** If either misses CP2, C runs F1–F7 first (lead's rule). Build everything on the rebuild API on `main`: `build_scene(seed, load_ranges(data_dir))`, `settle(sim)`, `render(sim, camera)`.
 
-- [ ] **8.1 Counterfactuals (F8).** For each object that supports another one (the `bottom` of an object-on-object contact), rebuild the scene, delete that object, settle, and record every object that moved more than 2 cm: `counterfactuals[o] = {"moved": [...]}`. Only supporting objects get an entry. [AGENTS]
+- [x] **8.1 Counterfactuals (F8).** For each object that supports another one (the `bottom` of an object-on-object contact), rebuild the scene, delete that object, settle, and record every object that moved more than 2 cm: `counterfactuals[o] = {"moved": [...]}`. Only supporting objects get an entry. [AGENTS]
   - Before coding: [decide] whether "moved" means position only or also rotation; what to do if the re-settle hits the step cap; whether objects that fall off the table count as moved (expected: yes).
   - Done when: in a hand-built stack (B on A), deleting A gives `moved: ["B"]`; all 300 scenes pass `schema.check`; the added time per scene is measured.
+  - Decisions (Decisions table): position only (> 2 cm); cap hit → measured at the cap with a warning. Removal = move the object out of the world from the saved settled state, then restore exactly.
+  - Result (2026-11-27):
+    - Hand-built stack: removing A gives `{"o1": {"moved": ["o2"]}}`; the bystander is untouched. Chain A/B/C: removing A gives `["o2", "o3"]`, removing B gives `["o3"]`. Poses are bit-identical afterwards.
+    - 300 scenes: 615 entries (one per supporting object) in 260 scenes. 484 move 1 object, 111 move 2+ (max 6), and 20 move none; every one of those 20 has another support holding the object up. 43 re-settles (7%) hit the cap.
+    - `schema.check` and `gen.check` pass 300/300. Same seed is still byte-identical, and objects/contacts/occludes are unchanged.
+    - B's `python -m tasks` (PR #4 branch) now makes 188 F8 tasks from real data (was 0).
+    - Cost: 3.4 s of 9.6 s per scene on average (35%), heavy-tailed (11–13 s when re-settles hit the cap). The 300-scene run took 780 s under load average ~50; re-time on a quiet machine (was 7.7 min before F8).
 
 - [ ] **8.2 F10 paired renders.** Move one object, re-render with the same camera, and write a before/after pair. [AGENTS] Format: `scene_id` `s_XXXXXXa` / `s_XXXXXXb` and `pair: {"before", "after", "moved"}` (B's schema).
   - Before coding: [decide] which scenes get a pair (all, or a share); which object moves and how far (it must stay visible and must not knock others); whether the regular scene doubles as "before".
