@@ -15,7 +15,10 @@ NEAR_CHANCE_TOL = 0.10    # my take: a majority baseline within 10 points of cha
 COUNT_MAX_SHARE = 0.50    # my take: no single F3 count may be the answer for more than half the tasks
 
 # Families whose answers form a small closed set: each answer gets equal share.
-EQUALISE = {"F4", "F5", "F9"}
+EQUALISE = {"F4", "F9"}
+# Families with one answer that is offered in every question (F5 always lists "table"). That answer
+# is kept at about chance share (1 / number of options), so always picking it scores about chance.
+FIXED_AT_CHANCE = {"F5": "table"}
 # Families where the most common answer is capped at the runner-up's size.
 CAP_TO_RUNNER_UP = {"F3", "F10"}
 
@@ -59,7 +62,16 @@ def balance(tasks, seed=0, max_per_family=MAX_PER_FAMILY):
         groups = _groups(fam_tasks, answer_key)
         for g in groups.values():
             rng.shuffle(g)
-        if fam in EQUALISE and len(groups) >= 2:
+        if fam in FIXED_AT_CHANCE and len(groups) >= 2:
+            fixed = FIXED_AT_CHANCE[fam]
+            chance = sum(1 / len(t["reference"]["options"]) for t in fam_tasks) / len(fam_tasks)
+            others = sum(len(g) for k, g in groups.items() if k != fixed)
+            want = round(min(max_per_family, round(others / (1 - chance))) * chance)
+            g = groups.get(fixed, [])
+            if len(g) > want:
+                drops[f"balance {fam}: '{fixed}' kept at chance share"] += len(g) - want
+                groups[fixed] = g[:want]
+        elif fam in EQUALISE and len(groups) >= 2:
             size = min(len(g) for g in groups.values())
             for k, g in groups.items():
                 drops[f"balance {fam}: evened out answers"] += len(g) - size
@@ -125,8 +137,37 @@ def spread_letters(tasks, seed=0):
     return out
 
 
+OBJECT_ID = re.compile(r"o\d+")
+
+
+def fixed_option_baseline(tasks):
+    """Best score of a blind guesser that always picks the option with a given text when it is offered
+    (else picks at random), over the option texts that mean the same thing in every scene ("table",
+    "behind"). Object ids are skipped: "o3" is a different object in each scene. Returns
+    (text, score) or None when every option is an object.
+    """
+    texts = sorted({v for t in tasks for v in t["reference"]["options"].values() if not OBJECT_ID.fullmatch(v)})
+    best = None
+    for text in texts:
+        score = 0.0
+        for t in tasks:
+            opts = t["reference"]["options"]
+            if text in opts.values():
+                score += opts[t["reference"]["choice"]] == text
+            else:
+                score += 1 / len(opts)
+        score = round(score / len(tasks), 3)
+        if best is None or score > best[1]:
+            best = (text, score)
+    return best
+
+
 def baselines(tasks):
-    """Majority-answer baseline per family: always answering the most common reference answer."""
+    """Majority-answer baseline per family: the best score from always giving the same answer.
+
+    For choice questions that is a blind guesser always picking the same option text when it is
+    offered (e.g. "table"), or always the same letter, whichever scores higher.
+    """
     out = {}
     for fam, fam_tasks in sorted(_groups(tasks, lambda t: t["family"]).items(), key=lambda kv: int(kv[0][1:])):
         n = len(fam_tasks)
@@ -147,6 +188,9 @@ def baselines(tasks):
             entry["letter_counts"] = dict(sorted(letters.items()))
             entry["majority_letter_baseline"] = round(letters.most_common(1)[0][1] / n, 3)
             chance = sum(1 / len(t["reference"]["options"]) for t in fam_tasks) / n
+            blind = fixed_option_baseline(fam_tasks)
+            if blind is not None:  # the answer a blind model can actually give, e.g. "always pick the table"
+                entry["majority_answer"], entry["majority_baseline"] = blind
             worst = max(entry["majority_baseline"], entry["majority_letter_baseline"])
         elif atype == "bool":
             chance, worst = 0.5, entry["majority_baseline"]

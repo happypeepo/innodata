@@ -44,6 +44,13 @@ def test_options_contain_correct_answers_and_unique_labels():
         assert list(options) == ["A", "B", "C", "D"]
 
 
+def test_options_always_offer_listed_ids():
+    s = stack_scene()
+    for seed in range(10):
+        options, _ = build_options(Random(seed), s, ["o3"], ["o1", "o2", "o4", "o5"], always=["table"])
+        assert {"o3", "table"} <= set(options.values()) and len(options) == 4
+
+
 def test_options_fail_when_a_correct_answer_is_not_describable():
     s = stack_scene()
     s["objects"][2]["visible_frac"] = 0.1
@@ -78,11 +85,27 @@ def test_f5_answer_matches_contacts_and_prefers_stacks():
     assert sum(t["reference"]["options"][t["reference"]["choice"]] == "table" for t in tasks) <= 1
 
 
+def test_f5_always_offers_the_table():
+    """Real-scene finding: when "table" was only sometimes offered, always picking it scored 56% vs 25% chance."""
+    s = stack_scene()
+    for seed in range(10):
+        tasks, _ = run(f5, s, seed)
+        assert tasks and all("table" in t["reference"]["options"].values() for t in tasks)
+
+
 def test_f5_skips_object_resting_on_two_things():
     s = stack_scene()
     s["contacts"].append({"top": "o3", "bottom": "o5"})
     _, rejects = run(f5, s)
     assert rejects["F5: object rests on more than one thing"] == 1
+
+
+def test_f7_skips_a_stack_with_a_leaning_object():
+    """An object resting on the table and on another object is tipped against it, not clearly stacked."""
+    s = stack_scene()
+    s["contacts"].append({"top": "o3", "bottom": "table"})
+    tasks, rejects = run(f7, s)
+    assert tasks == [] and rejects["F7: an object leans on the table and another object"] == 1
 
 
 # ---------------------------------------------------------------- F6

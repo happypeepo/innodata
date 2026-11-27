@@ -26,12 +26,13 @@ def option_label(oid: str, scene: dict) -> str | None:
     return ref.text[4:] if ref.text.startswith("the ") else ref.text
 
 
-def build_options(rng: Random, scene: dict, correct, pool, n_total: int = DEFAULT_OPTIONS):
+def build_options(rng: Random, scene: dict, correct, pool, n_total: int = DEFAULT_OPTIONS, always=()):
     """Shuffle `correct` ids plus distractors drawn from `pool` into lettered options.
 
     Returns (options, labels): options maps letter -> id (goes in reference), labels maps
     letter -> text (goes in the question). Returns None if a correct answer can't be described.
-    Distractors that can't be described are skipped.
+    Distractors that can't be described are skipped. Ids in `always` are offered in every question
+    (F5 always offers "table"), so whether they appear gives nothing away.
     """
     correct = list(dict.fromkeys(correct))
     labels = {}
@@ -40,6 +41,11 @@ def build_options(rng: Random, scene: dict, correct, pool, n_total: int = DEFAUL
         if label is None:
             return None
         labels[oid] = label
+    for oid in always:
+        if oid not in labels and len(labels) < max(n_total, len(correct)):
+            label = option_label(oid, scene)
+            if label is not None and label not in labels.values():
+                labels[oid] = label
     extras = [oid for oid in dict.fromkeys(pool) if oid not in labels]
     rng.shuffle(extras)
     for oid in extras:

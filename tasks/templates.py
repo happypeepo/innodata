@@ -273,8 +273,9 @@ def f5(scene, rng: Random, rejects: Counter, ctx=None):
         if ref.relational:
             rejects["F5: only a left/right description exists"] += 1
             continue
-        pool = ["table"] + [o["id"] for o in scene["objects"] if o["id"] not in (top, bottom)]
-        built = build_options(rng, scene, [bottom], pool)
+        pool = [o["id"] for o in scene["objects"] if o["id"] not in (top, bottom)]
+        # "table" is in every F5 question, so a blind "pick the table if offered" guess gains nothing
+        built = build_options(rng, scene, [bottom], pool, always=["table"])
         if built is None or len(built[0]) < 2:
             rejects["F5: support not describable as an option"] += 1
             continue
@@ -352,7 +353,13 @@ def _topo(nodes, edges):
 
 def f7(scene, rng: Random, rejects: Counter, ctx=None):
     tasks = []
+    under = _supports(scene)
     for nodes, edges in _pick(rng, _stacks(scene)):
+        # A tipped object resting on both the table and another object (leaning) doesn't look stacked,
+        # so "clear the stack" would be unclear. F5 skips the same objects.
+        if any("table" in under.get(n, []) and set(under[n]) != {"table"} for n in nodes):
+            rejects["F7: an object leans on the table and another object"] += 1
+            continue
         order = _topo(nodes, edges)
         if order is None:
             rejects["F7: support graph has a cycle"] += 1

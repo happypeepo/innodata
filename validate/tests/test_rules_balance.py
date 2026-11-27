@@ -122,6 +122,29 @@ def test_family_cap_keeps_balance():
     assert baselines(kept)["F4"]["near_chance"] is True
 
 
+def f5_tasks(n_table, n_object):
+    """F5 tasks with "table" always among 4 options; the first n_table have "table" as the answer."""
+    return [fake(i, "F5", "choice", {"choice": "A", "options": {"A": "table" if i < n_table else "o1",
+                                                                  "B": "o2", "C": "o3",
+                                                                  "D": "o1" if i < n_table else "table"}})
+            for i in range(n_table + n_object)]
+
+
+def test_f5_table_kept_at_chance_share():
+    kept, drops = balance(f5_tasks(250, 200), seed=0)
+    assert len(kept) == MAX_PER_FAMILY
+    assert Counter(answer_key(t) for t in kept) == {"table": 25, "object": 75}
+    assert drops["balance F5: 'table' kept at chance share"] == 225
+    b = baselines(kept)["F5"]
+    assert b["majority_answer"] == "table" and b["majority_baseline"] == 0.25 and b["near_chance"] is True
+
+
+def test_blind_table_guess_is_caught():
+    """Half the answers are "table": always picking it scores 50% against 25% chance."""
+    b = baselines(spread_letters(f5_tasks(50, 50), seed=0))["F5"]
+    assert b["majority_answer"] == "table" and b["majority_baseline"] == 0.5 and b["near_chance"] is False
+
+
 def test_count_majority_capped_to_runner_up():
     tasks = [fake(i, "F3", "count", {"count": 1 if i < 70 else (2 if i < 90 else 3)}) for i in range(100)]
     kept, _ = balance(tasks, seed=0)

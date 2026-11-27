@@ -117,8 +117,11 @@ def main(argv=None):
     print(f"  independent check: {independent['agreement_pct']}% agree on {independent['decided_tasks']} checkable "
           f"tasks; {len(independent['disagreements'])} disagreements; "
           f"{independent['scene_fields']['problems']} scene-field problems")
-    print(f"  human check: {human['checked']} checked, {human['agreement_pct']}% agree"
-          + (f", {human['stale']} stale" if human["stale"] else ""))
+    if human["checked"]:
+        print(f"  human check: {human['checked']} checked, {human['agreement_pct']}% agree"
+              + (f", {human['stale']} stale" if human["stale"] else ""))
+    else:
+        print("  human check: not run yet (python -m validate.spotcheck)")
     not_balanced = [f for f, v in report["majority_baseline"].items() if v["near_chance"] is False]
     if not_balanced:
         print(f"  majority baseline above chance for: {', '.join(not_balanced)} (see report)")
