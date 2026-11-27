@@ -54,6 +54,8 @@ MAX_BUILD_ATTEMPTS = 10
 # Support: averaged contact normal within ~72 degrees of vertical. Occlusion: at least 1% hidden.
 SUPPORT_MIN_NZ = 0.3
 OCCLUSION_MIN_FRAC = 0.01
+# Counterfactuals: after removing a supporting object, anything whose centre moved more than this.
+MOVED_MIN_M = 0.02
 
 SEG_BACKGROUND = 0
 SEG_TABLE = 1
@@ -509,6 +511,42 @@ def occlusion_pairs(seg: np.ndarray, objects: list[SceneObject], alone: dict[int
     return occludes
 
 
+def counterfactuals(sim: Sim, contacts: list[dict]) -> dict:
+    """F8 labels: for each object that supports another, what moves more than 2 cm without it.
+
+    Each removal starts from the saved settled state (the world scene.json describes): the supporting
+    object is moved far below the floor, which takes it out of the world like deleting it, the rest
+    re-settle with the agreed stillness rule, and the state is restored exactly afterwards.
+    """
+    client = sim.client
+    supporters = {c["bottom"] for c in contacts if c["bottom"] != "table"}
+    start = {o.body: np.array(p.getBasePositionAndOrientation(o.body, physicsClientId=client)[0])
+             for o in sim.objects}
+    out = {}
+    for removed in sim.objects:
+        if removed.id not in supporters:
+            continue
+        rest = [o for o in sim.objects if o is not removed]
+        state = p.saveState(physicsClientId=client)
+        try:
+            p.resetBasePositionAndOrientation(removed.body, [0.0, 0.0, -10.0], [0.0, 0.0, 0.0, 1.0],
+                                              physicsClientId=client)
+            _, settled = settle_objects(client, rest)
+            if not settled:
+                print(f"warning: {sim.scene_id} counterfactual without {removed.id} hit the "
+                      f"{MAX_SETTLE_STEPS}-step settle cap; measured at the cap", file=sys.stderr)
+            moved = []
+            for o in rest:
+                xyz = np.array(p.getBasePositionAndOrientation(o.body, physicsClientId=client)[0])
+                if np.linalg.norm(xyz - start[o.body]) > MOVED_MIN_M:
+                    moved.append(o.id)
+            out[removed.id] = {"moved": moved}
+        finally:
+            p.restoreState(stateId=state, physicsClientId=client)
+            p.removeState(state, physicsClientId=client)
+    return out
+
+
 def git_version() -> str:
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
@@ -621,6 +659,7 @@ def write_scene(sim: Sim, out: Path) -> dict:
     seg = remap_seg(seg_raw, table_id, objects)
     contacts = contact_graph(client, table_id, objects)  # before render_alone_masks moves bodies around
     alone = render_alone_masks(client, objects, view, proj)
+    cf = counterfactuals(sim, contacts)  # restores the settled state, so poses below are unchanged
 
     rel = {
         "image_path": f"images/{scene_id}.png",
@@ -655,7 +694,7 @@ def write_scene(sim: Sim, out: Path) -> dict:
         "objects": scene_objects,
         "contacts": contacts,
         "occludes": occlusion_pairs(seg, objects, alone),
-        "counterfactuals": {},  # not computed by the generator; filled by whoever builds F8
+        "counterfactuals": cf,
         "pair": None,           # set only for F10 before/after scenes
         "difficulty": {
             "n_objects": len(objects),
