@@ -257,9 +257,17 @@ Role A owns and fills `counterfactuals` (F8), `goal` (F9) and `pair` (F10) in `s
     - B's `python -m tasks` (PR #4 branch) now makes 188 F8 tasks from real data (was 0).
     - Cost: 3.4 s of 9.6 s per scene on average (35%), heavy-tailed (11–13 s when re-settles hit the cap). The 300-scene run took 780 s under load average ~50; re-time on a quiet machine (was 7.7 min before F8).
 
-- [ ] **8.2 F10 paired renders.** Move one object, re-render with the same camera, and write a before/after pair. [AGENTS] Format: `scene_id` `s_XXXXXXa` / `s_XXXXXXb` and `pair: {"before", "after", "moved"}` (B's schema).
+- [x] **8.2 F10 paired renders.** Move one object, re-render with the same camera, and write a before/after pair. [AGENTS] Format: `scene_id` `s_XXXXXXa` / `s_XXXXXXb` and `pair: {"before", "after", "moved"}` (B's schema).
   - Before coding: [decide] which scenes get a pair (all, or a share); which object moves and how far (it must stay visible and must not knock others); whether the regular scene doubles as "before".
   - Done when: pair scenes pass `schema.check`; only the moved object's pose changes; both images use identical camera matrices.
+  - Decisions (Decisions table): `--pair-frac` 0.33, decided per scene after all other draws, written as `a`/`b`. The moved object is free (nothing on it) and ≥ 30% visible. It is relocated 10–25 cm to a free spot and settled; a placement counts only if every other object stays within 5 mm and the object is ≥ 30% visible after. Up to 10 attempts, else the scene stays unpaired.
+  - Result (2026-11-27):
+    - 300 seeds → 390 scenes: 210 unpaired and 90 pairs (2 scenes found no valid placement).
+    - All 90 pairs: the moved object travels ≥ 10 cm, others stay ≤ 5 mm, it is ≥ 30% visible after, and cameras and ids are identical.
+    - Unpaired and `a` scenes are byte-identical to the pre-pair output.
+    - `schema.check` and `gen.check` pass 390/390, and a re-run is byte-identical.
+    - B's `python -m tasks` makes 69 F10 tasks from real data (was 0; 21 pairs rejected by B as "not describable as an option").
+    - The run took 1,077 s, over the ~15 min target, but the load average was 150–180 at the time. **Re-time on a quiet machine.** If it is still over, the after-scenes' counterfactuals could be skipped (B makes only F10 tasks from `b` scenes).
 
 - [ ] **8.3 F9 goal scenes.** A scripted placement that succeeds or fails; the label comes from re-simulating. [AGENTS] Format: `goal: {"object", "relation", "target", "success"}`.
   - Before coding: [decide] which relations (only `"on"`?); how failures are produced (an offset drop, a sphere on a sphere, …); the success/failure balance; which scenes get a goal.
