@@ -16,7 +16,7 @@ Roster: `@happypeepo`, `@Dhruvk2004`, `@hritz23`, `@Raj-Shah19`. **Claim a role 
 | **A — Scene Generator** | `@Raj-Shah19` | `gen/` | Rendered images + masks + depth + `scene.json` per scene |
 | **B — Tasks & Validation** | `@Dhruvk2004` | `tasks/`, `validate/`, `schema/`, `fixtures/` | Question templates, reference answers, checkers, validation evidence |
 | **C — Eval Harness** | `<NAME_C>` | `eval/` | Model runners, prompt formats, response parsing, scoring, cost log |
-| **D — Analysis & Story** | `<NAME_D>` | `report/`, `docs/`, `README.md` | Breakdowns, charts, failure gallery, demo, write-up, pitch |
+| **D — Analysis & Story** | `@hritz23` | `report/`, `docs/`, `README.md` | Breakdowns, charts, failure gallery, demo, write-up, pitch |
 
 Shared (edit by PR, tag the owner): `Makefile`, `requirements.txt`, `context/`.
 
