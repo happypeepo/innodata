@@ -233,6 +233,30 @@ Tell Dhruv the first three: he reads your files and will be affected.
 ## Phase 7 — Merge
 
 - [ ] **7.1 `make smoke`** must pass before merging. [AGENTS] The `Makefile` doesn't exist yet; check whether someone has added it.
-- [ ] **7.2 Make sure the branch is pushed.** `git push -u origin gen/scene-generator`
-- [ ] **7.3 Open a PR into `main`.** You may merge your own PR inside `gen/`. Changes to shared files (`requirements.txt`, `Makefile`, `context/`) need one approval. [AGENTS]
+  - Status (2026-11-27): #12 was merged before any `Makefile` existed. The `Makefile` and `make smoke` arrive with C's PR #9, so run it once that lands.
+- [x] **7.2 Make sure the branch is pushed.** `git push -u origin gen/scene-generator`
+  - Result: pushed as `Raj-Shah19` on 2026-11-25.
+- [x] **7.3 Open a PR into `main`.** You may merge your own PR inside `gen/`. Changes to shared files (`requirements.txt`, `Makefile`, `context/`) need one approval. [AGENTS]
+  - Result: merged as #12 (merge commit fd58561).
 - [ ] **7.4 Format changes**, if you needed any: one PR that edits `schema/`, `fixtures/` and `AGENTS.md` together. Tag all owners, add only new optional fields, and log it in the Decisions table. [AGENTS]
+
+---
+
+## Phase 8 — F8/F9/F10 data (accepted 2026-11-27)
+
+Role A owns and fills `counterfactuals` (F8), `goal` (F9) and `pair` (F10) in `scene.json`. B's generators read them. This follows Dhruv's proposal on PR #9 and A's checklist in `AGENTS.md`. Targets: **F8 by 28 Nov, F9 + F10 by 30 Nov.** If either misses CP2, C runs F1–F7 first (lead's rule). Build everything on the rebuild API on `main`: `build_scene(seed, load_ranges(data_dir))`, `settle(sim)`, `render(sim, camera)`.
+
+- [ ] **8.1 Counterfactuals (F8).** For each object that supports another one (the `bottom` of an object-on-object contact), rebuild the scene, delete that object, settle, and record every object that moved more than 2 cm: `counterfactuals[o] = {"moved": [...]}`. Only supporting objects get an entry. [AGENTS]
+  - Before coding: [decide] whether "moved" means position only or also rotation; what to do if the re-settle hits the step cap; whether objects that fall off the table count as moved (expected: yes).
+  - Done when: in a hand-built stack (B on A), deleting A gives `moved: ["B"]`; all 300 scenes pass `schema.check`; the added time per scene is measured.
+
+- [ ] **8.2 F10 paired renders.** Move one object, re-render with the same camera, and write a before/after pair. [AGENTS] Format: `scene_id` `s_XXXXXXa` / `s_XXXXXXb` and `pair: {"before", "after", "moved"}` (B's schema).
+  - Before coding: [decide] which scenes get a pair (all, or a share); which object moves and how far (it must stay visible and must not knock others); whether the regular scene doubles as "before".
+  - Done when: pair scenes pass `schema.check`; only the moved object's pose changes; both images use identical camera matrices.
+
+- [ ] **8.3 F9 goal scenes.** A scripted placement that succeeds or fails; the label comes from re-simulating. [AGENTS] Format: `goal: {"object", "relation", "target", "success"}`.
+  - Before coding: [decide] which relations (only `"on"`?); how failures are produced (an offset drop, a sphere on a sphere, …); the success/failure balance; which scenes get a goal.
+  - Done when: `goal` passes `schema.check`; each `success` matches the contact graph after settling; the success/failure split is near the chosen balance.
+
+- [ ] **8.4 Regenerate and hand off.** Regenerate the 300 scenes; check that `schema.check` and `gen.check` pass and that B's `python -m tasks --data data/` produces F8/F9/F10 tasks. Commit, add a log line, open a PR.
+
