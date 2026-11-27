@@ -1,0 +1,2 @@
+# Only for the demo (report/demo.py); the pipeline itself does not need it.
+streamlit>=1.40

@@ -78,6 +78,17 @@ python -m report --results data/results/
 
 Model aliases: `mock`, `er2` (`gemini-robotics-er-2-preview`), `gemini-pro`, `claude`, `gpt`. `--model-id` overrides the default ID. The API budget is $100; stop and post in the handoff at $70.
 
+## Demo
+
+```bash
+pip install -r report/requirements-demo.txt
+streamlit run report/demo.py -- --data fixtures/ --results fixtures/results/   # works with no generated data
+streamlit run report/demo.py -- --data data/                                   # after a full run
+```
+
+- **Benchmark answers:** pick a scene and a question, and see every model's stored answer drawn on the image (aqua = reference, orange = the model's point or box) with ✓/✗ and the failure type. Switch to `text_only` to see the same question answered without the image.
+- **New scene (live):** pick a seed, render a fresh scene (physics + counterfactuals, ~10 s), pick one of its validated questions and ask `mock` or any model with a key in `.env`. Real models cost money per call. Needs `gen/`, `tasks/` and `eval/` on the checkout.
+
 ## Outputs
 
 | Path | From | What |
@@ -95,7 +106,7 @@ Model aliases: `mock`, `er2` (`gemini-robotics-er-2-preview`), `gemini-pro`, `cl
 | 25% | Validity & validation evidence | References from simulator state, never a model. F8/F9 from physics reruns. Validity rules (uniqueness, ≥ 30% visible, 3 cm margin), independent re-derivation from seg/depth, human spot-check, all in `validation_report.json`. |
 | 20% | Meaningful variation | 10 families from pointing to counterfactuals. Difficulty knobs (objects, occlusion, distractors, camera, lighting, scale, stacking) recorded on every task and sliced in the report. |
 | 15% | Original approach & engineering judgement | Deterministic checkers instead of an LLM judge, text-only baseline, budget cap and dry-run, [`docs/limitations.md`](docs/limitations.md). |
-| 15% | Practical impact & communication | [`docs/application.md`](docs/application.md): what each error costs a robot. Report with failure gallery; demo app (in progress). |
+| 15% | Practical impact & communication | [`docs/application.md`](docs/application.md): what each error costs a robot. Report with failure gallery; Streamlit demo (`report/demo.py`). |
 
 ## Repo layout
 
