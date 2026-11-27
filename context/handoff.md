@@ -141,6 +141,11 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 | 2026-11-24 | F8: `score()` returns raw F1 (partial credit); headline accuracy counts F1 = 1.0 only. | lead (proposed by B) | Docs gave no threshold |
 | 2026-11-24 | Human spot-check results committed as `validate/evidence/human_check_seed<N>.jsonl`. | lead (proposed by B) | `data/` is gitignored; judges need the evidence |
 | 2026-11-24 | Unit tests in `validate/tests/` with pytest and a `make test` target. | lead (proposed by B) | |
+| 2026-11-25 | **C plan approved** (`eval/PLAN.md`): one prompt for all models, lenient-extraction/strict-meaning parser, B's `score()` used directly (no stub), cache = resume, `--dry-run` + `--budget-usd`, run config in `results/<model>.meta.json` (no result-schema change). | lead (C) | See PLAN.md §3–4 |
+| 2026-11-25 | PRs #1 and #2 merged (merge commits, so #3–#8 stay stacked cleanly; #3 now targets `main`). | lead | Unblocks C (`score()`) and A (schema on main) |
+| 2026-11-25 | **`Makefile` owned by C.** `make smoke` = schema.check fixtures → tasks → mock eval → report → pytest; each stage runs only once its package is on `main`, so nobody needs to edit the Makefile in their PR. `make test`, `make gen`, `make tasks` too. | lead (C) | A and B were both blocked on it |
+| 2026-11-25 | Models: ER 2 + one Gemini generalist + one Claude + one GPT (IDs TBD by lead). Official SDKs (`google-genai`, `anthropic`, `openai`). ER 2 main run at default thinking budget, ablation on a 100-task subset. | lead (C) | Specialist-vs-generalist story at sane cost |
+| 2026-11-25 | Real eval runs on locally regenerated `gen --seed 0 --n 300` + `tasks --seed 0`; `tasks.jsonl` frozen (sha in meta.json) before any paid run. If F8/F10 data isn't ready by CP2, run the other families first and add those later. | lead (C) | Same tasks for every model; don't block on counterfactuals |
 
 ## Open questions
 
@@ -164,4 +169,5 @@ Contracts live in `AGENTS.md`. Integration is a data swap (`--data data/`), not 
 [2026-11-25 18:34] Raj-Shah19 (A): done: pushed: Role A claim on main (7014db1); branch gen/scene-generator with the generator (scene.json valid against B's schema, 300 scenes, --stack-frac) | next: tell Dhruv; Phase 7 (make smoke + PR) | blocked on: Makefile/make smoke
 [2026-11-24 15:20] Dhruvk2004 (B): done: schema/ (3 JSON Schemas + python -m schema.check --data <dir>), fixtures/ (5 scene files, 16 tasks F1–F10, mock results), validate/tests, AGENTS.md contract updates + Decisions rows for the 8 lead-approved defaults | next: validate/checkers.py | blocked on: team confirming Raj's Role A option-A picks (seg 0/1, 6 colours, 3 shapes, hidden-object nulls) that the schema uses
 [2026-11-24 16:13] Dhruvk2004 (B): done: validate/checkers.py (point_in_mask, point_in_any_mask, bbox_iou, exact, topo_order_valid, set_f1 + score() and load_scene()), 65 new unit tests, mock results re-score to the stored values | next: tasks/ pipeline + F1, F2, F4, F9 templates | blocked on: Phase 1 PR review (this branch is stacked on it); C to swap eval/checkers_stub.py for validate.checkers once merged
+[2026-11-25 23:30] happypeepo (C): done: claimed Role C; eval/PLAN.md; merged #1 + #2; Makefile (`make smoke` / `make test`, stages auto-enable as packages land) green on main (76 tests) and with B's stack (146); SDK deps + .env.example | next: Phase 1 eval harness on fixtures with the mock model | blocked on: model IDs + API budget (lead); F8/F10 real data needs an owner (A/B); Role D unclaimed
 ```

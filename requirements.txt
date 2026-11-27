@@ -2,3 +2,7 @@ numpy
 pillow
 jsonschema
 pytest
+python-dotenv
+google-genai
+anthropic
+openai
