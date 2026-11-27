@@ -64,6 +64,11 @@ PAIR_MIN_VISIBLE = 0.3
 PAIR_ATTEMPTS = 10
 PAIR_SPOT_TRIES = 50
 
+# F9 goal scenes: drop height above the target top, and how many placements to try.
+GOAL_DROP_M = 0.02
+GOAL_ATTEMPTS = 10
+UPRIGHT_MIN_COS = 0.95  # a cylinder counts as upright (flat top) if its axis is within ~18 deg of vertical
+
 SEG_BACKGROUND = 0
 SEG_TABLE = 1
 SEG_FIRST_OBJECT = 2
@@ -99,6 +104,7 @@ DEFAULT_RANGES = {
     "scale": (1.0, 1.0),
     "stack_frac": (0.0, 0.35),
     "pair_frac": 0.33,  # share of scenes that get an F10 before/after pair (a probability, not a range)
+    "goal_frac": 0.33,  # share of scenes that become F9 goal scenes (exclusive with pairs)
 }
 
 # A planted (stacked) object lands within this distance of its base object's centre.
@@ -636,12 +642,17 @@ def generate_scene(seed: int, out_dir: str | Path, ranges: dict | None = None) -
     """Build, settle and render one scene; write its files under out_dir and return scene.json.
 
     A share of scenes (pair_frac) becomes an F10 pair: s_XXXXXXa plus s_XXXXXXb; the a-scene is returned.
+    Another share (goal_frac) becomes an F9 goal scene: one object placed on another, with a goal label.
     """
-    pair_frac = {**DEFAULT_RANGES, **(ranges or {})}["pair_frac"]
+    full = {**DEFAULT_RANGES, **(ranges or {})}
     with build_scene(seed, ranges) as sim:
-        # Drawn after every other draw, so unpaired scenes are exactly what they were without pairs.
-        if sim.rng.random() < pair_frac:
+        # One draw after every other draw decides pair / goal / plain, so plain scenes and pairs are
+        # exactly what they were before goal scenes existed.
+        r = sim.rng.random()
+        if r < full["pair_frac"]:
             return make_pair(sim, Path(out_dir))
+        if r < full["pair_frac"] + full["goal_frac"]:
+            return make_goal(sim, Path(out_dir))
         return write_scene(sim, Path(out_dir))
 
 
@@ -782,6 +793,84 @@ def make_pair(sim: Sim, out: Path) -> dict:
     print(f"note: {sim.scene_id} found no valid F10 placement; written unpaired", file=sys.stderr)
     save_scene(out, before, before_images)
     return before
+
+
+def make_goal(sim: Sim, out: Path) -> dict:
+    """F9: place a free object "on" a flat-topped free object, settle, and label success by contacts.
+
+    Half the drops aim near the target's centre, half near or past its edge. success means the
+    settled contacts have {top: object, bottom: target} and the object doesn't touch the table.
+    An attempt is kept only if both objects are >= 30% visible, the placed object stays on the
+    table, and it isn't ambiguous: resting on the target and on other objects (but not the table)
+    is discarded. After GOAL_ATTEMPTS failed attempts the scene is written plain. Returns the scene.
+    """
+    client, rng = sim.client, sim.rng
+    contacts = contact_graph(client, sim.table_id, sim.objects)
+    supporting = {c["bottom"] for c in contacts}
+    free = [o for o in sim.objects if o.id not in supporting]
+    targets = [o for o in free if o.shape == "box" or (o.shape == "cylinder" and upright(client, o.body))]
+    pairs = [(o, t) for t in targets for o in free
+             if o is not t and {"top": o.id, "bottom": t.id} not in contacts]
+    state = p.saveState(physicsClientId=client)
+    try:
+        for _ in range(GOAL_ATTEMPTS if pairs else 0):
+            obj, target = pairs[rng.integers(len(pairs))]
+            aim = "centre" if rng.random() < 0.5 else "edge"
+            if not place_on(sim, obj, target, aim):
+                p.restoreState(stateId=state, physicsClientId=client)
+                continue
+            # Contacts first (cheap); render only placements that aren't ambiguous.
+            supports = {c["bottom"] for c in contact_graph(client, sim.table_id, sim.objects) if c["top"] == obj.id}
+            on_target, on_table = target.id in supports, "table" in supports
+            if not (on_target and not on_table and len(supports) > 1):
+                scene, images = describe_scene(sim)
+                facts = {d["id"]: d for d in scene["objects"]}
+                if min(facts[obj.id]["visible_frac"], facts[target.id]["visible_frac"]) >= PAIR_MIN_VISIBLE:
+                    goal = {"object": obj.id, "relation": "on", "target": target.id,
+                            "success": on_target and not on_table}
+                    keys = list(scene)
+                    scene = {k: scene[k] for k in keys[:keys.index("difficulty")]} | {"goal": goal} | \
+                            {"difficulty": scene["difficulty"]}
+                    save_scene(out, scene, images)
+                    return scene
+            p.restoreState(stateId=state, physicsClientId=client)
+    finally:
+        p.removeState(state, physicsClientId=client)
+    print(f"note: {sim.scene_id} found no valid F9 placement; written plain", file=sys.stderr)
+    return write_scene(sim, out)
+
+
+def upright(client: int, body: int) -> bool:
+    """True if the body's local z axis (a cylinder's axis) is within ~18 degrees of vertical."""
+    quat = p.getBasePositionAndOrientation(body, physicsClientId=client)[1]
+    return abs(p.getMatrixFromQuaternion(quat)[8]) >= UPRIGHT_MIN_COS
+
+
+def place_on(sim: Sim, obj: SceneObject, target: SceneObject, aim: str) -> bool:
+    """Drop obj from 2 cm above target's top, offset towards the centre or the edge; settle.
+
+    Returns False if obj ends below the table top (fell off), so the attempt is discarded.
+    """
+    client, rng = sim.client, sim.rng
+    tx, ty, t_radius = footprint_m(client, target.body)
+    o_radius = footprint_m(client, obj.body)[2]
+    t_top = p.getAABB(target.body, physicsClientId=client)[1][2]
+    if aim == "centre":
+        offset = rng.uniform(0.0, 0.3 * t_radius)
+    else:
+        offset = rng.uniform(0.8 * t_radius, t_radius + 0.5 * o_radius)
+    angle = rng.uniform(0.0, 2 * np.pi)
+    xyz, quat = p.getBasePositionAndOrientation(obj.body, physicsClientId=client)
+    lo, _ = p.getAABB(obj.body, physicsClientId=client)
+    yaw = p.getQuaternionFromEuler([0.0, 0.0, float(rng.uniform(-np.pi, np.pi))])
+    _, new_quat = p.multiplyTransforms([0, 0, 0], yaw, [0, 0, 0], quat)
+    lift = xyz[2] - lo[2]
+    p.resetBasePositionAndOrientation(obj.body, [tx + offset * np.cos(angle), ty + offset * np.sin(angle),
+                                                 t_top + lift + GOAL_DROP_M], new_quat, physicsClientId=client)
+    p.resetBaseVelocity(obj.body, [0, 0, 0], [0, 0, 0], physicsClientId=client)
+    if not settle(sim):
+        print(f"warning: {sim.scene_id} goal placement hit the {MAX_SETTLE_STEPS}-step settle cap", file=sys.stderr)
+    return p.getBasePositionAndOrientation(obj.body, physicsClientId=client)[0][2] >= sim.top_z
 
 
 def footprint_m(client: int, body: int) -> tuple[float, float, float]:

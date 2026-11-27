@@ -40,6 +40,8 @@ def main() -> None:
                     help="share of objects dropped onto an earlier box/cylinder")
     ap.add_argument("--pair-frac", type=float, default=d["pair_frac"],
                     help="share of scenes that also get an F10 after-scene (written as s_XXXXXXa/b)")
+    ap.add_argument("--goal-frac", type=float, default=d["goal_frac"],
+                    help="share of scenes that become F9 goal scenes (exclusive with pairs)")
     args = ap.parse_args()
 
     for name, (lo, hi) in [("--n-objects", args.n_objects), ("--elevation", args.elevation),
@@ -53,8 +55,8 @@ def main() -> None:
         ap.error("--distractors must be >= 0")
     if not 0.0 <= args.stack_frac[0] <= args.stack_frac[1] <= 1.0:
         ap.error("--stack-frac must lie in 0..1")
-    if not 0.0 <= args.pair_frac <= 1.0:
-        ap.error("--pair-frac must lie in 0..1")
+    if not (0.0 <= args.pair_frac and 0.0 <= args.goal_frac and args.pair_frac + args.goal_frac <= 1.0):
+        ap.error("--pair-frac and --goal-frac must be >= 0 and add up to at most 1")
     if args.workers < 1:
         ap.error("--workers must be >= 1")
 
@@ -67,6 +69,7 @@ def main() -> None:
         "scale": tuple(args.scale_range),
         "stack_frac": tuple(args.stack_frac),
         "pair_frac": args.pair_frac,
+        "goal_frac": args.goal_frac,
     }
     try:
         scene.check_manifest(args.out, ranges)
