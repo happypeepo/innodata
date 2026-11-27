@@ -57,6 +57,13 @@ OCCLUSION_MIN_FRAC = 0.01
 # Counterfactuals: after removing a supporting object, anything whose centre moved more than this.
 MOVED_MIN_M = 0.02
 
+# F10 pairs: the moved object goes 10-25 cm away; other objects must stay within 5 mm.
+PAIR_MOVE_M = (0.10, 0.25)
+PAIR_OTHERS_MAX_M = 0.005
+PAIR_MIN_VISIBLE = 0.3
+PAIR_ATTEMPTS = 10
+PAIR_SPOT_TRIES = 50
+
 SEG_BACKGROUND = 0
 SEG_TABLE = 1
 SEG_FIRST_OBJECT = 2
@@ -91,6 +98,7 @@ DEFAULT_RANGES = {
     "lighting": ("bright", "normal", "dim"),
     "scale": (1.0, 1.0),
     "stack_frac": (0.0, 0.35),
+    "pair_frac": 0.33,  # share of scenes that get an F10 before/after pair (a probability, not a range)
 }
 
 # A planted (stacked) object lands within this distance of its base object's centre.
@@ -134,6 +142,7 @@ class Sim:
     objects: list[SceneObject]
     knobs: Knobs | None = None
     settled: bool = True  # False if the last settle hit MAX_SETTLE_STEPS
+    rng: np.random.Generator | None = None  # the scene's rng, after every draw build_scene made
 
     @property
     def scene_id(self) -> str:
@@ -562,13 +571,13 @@ MANIFEST = "manifest.json"
 def ranges_json(ranges: dict | None) -> dict:
     """The full knob ranges (defaults filled in) as JSON lists, in DEFAULT_RANGES order."""
     full = {**DEFAULT_RANGES, **(ranges or {})}
-    return {k: list(full[k]) for k in DEFAULT_RANGES}
+    return {k: list(full[k]) if isinstance(full[k], (tuple, list)) else full[k] for k in DEFAULT_RANGES}
 
 
 def load_ranges(data_dir: str | Path) -> dict:
     """The knob ranges a data folder was generated with, from its manifest.json."""
     manifest = json.loads((Path(data_dir) / MANIFEST).read_text())
-    return {k: tuple(v) for k, v in manifest["ranges"].items()}
+    return {k: tuple(v) if isinstance(v, list) else v for k, v in manifest["ranges"].items()}
 
 
 def check_manifest(data_dir: str | Path, ranges: dict | None) -> None:
@@ -608,7 +617,7 @@ def build_scene(seed: int, ranges: dict | None = None) -> Sim:
         try:
             objects = spawn_objects(client, rng, attrs, anchor, top_z, knobs.scale,
                                     int(round(knobs.stack_frac * knobs.n_objects)))
-            sim = Sim(seed, client, table_id, top_z, objects, knobs)
+            sim = Sim(seed, client, table_id, top_z, objects, knobs, rng=rng)
             if not settle(sim):
                 print(f"warning: {scene_id} hit the {MAX_SETTLE_STEPS}-step settle cap", file=sys.stderr)
             sim.objects = remove_fallen(client, objects, top_z)
@@ -624,8 +633,15 @@ def build_scene(seed: int, ranges: dict | None = None) -> Sim:
 
 
 def generate_scene(seed: int, out_dir: str | Path, ranges: dict | None = None) -> dict:
-    """Build, settle and render one scene; write its files under out_dir and return scene.json."""
+    """Build, settle and render one scene; write its files under out_dir and return scene.json.
+
+    A share of scenes (pair_frac) becomes an F10 pair: s_XXXXXXa plus s_XXXXXXb; the a-scene is returned.
+    """
+    pair_frac = {**DEFAULT_RANGES, **(ranges or {})}["pair_frac"]
     with build_scene(seed, ranges) as sim:
+        # Drawn after every other draw, so unpaired scenes are exactly what they were without pairs.
+        if sim.rng.random() < pair_frac:
+            return make_pair(sim, Path(out_dir))
         return write_scene(sim, Path(out_dir))
 
 
@@ -649,6 +665,34 @@ def generate_scene_timed(seed: int, out_dir: str | Path, ranges: dict | None = N
 
 def write_scene(sim: Sim, out: Path) -> dict:
     """Render a settled world, compute per-object facts, write the files and return scene.json."""
+    scene, images = describe_scene(sim)
+    save_scene(out, scene, images)
+    return scene
+
+
+def save_scene(out: Path, scene: dict, images: tuple) -> None:
+    """Write a described scene's image, depth, seg and scene.json under out."""
+    rgb, depth, seg = images
+    for key in ("image_path", "depth_path", "seg_path"):
+        (out / scene[key]).parent.mkdir(parents=True, exist_ok=True)
+    (out / "scenes").mkdir(parents=True, exist_ok=True)
+    Image.fromarray(rgb).save(out / scene["image_path"])
+    np.save(out / scene["depth_path"], depth)
+    Image.fromarray(seg, mode="L").save(out / scene["seg_path"])
+    (out / f"scenes/{scene['scene_id']}.json").write_text(json.dumps(scene, indent=2) + "\n")
+
+
+def rename_scene(scene: dict, scene_id: str) -> dict:
+    """The same scene under another id (for the a/b names of an F10 pair)."""
+    return {**scene, "scene_id": scene_id, "image_path": f"images/{scene_id}.png",
+            "depth_path": f"depth/{scene_id}.npy", "seg_path": f"seg/{scene_id}.png"}
+
+
+def describe_scene(sim: Sim) -> tuple[dict, tuple]:
+    """scene.json for the current settled world, plus (rgb, depth, seg). Writes nothing.
+
+    The world is left exactly as it was (render-alone and counterfactuals restore it).
+    """
     client, table_id, objects, seed, scene_id = sim.client, sim.table_id, sim.objects, sim.seed, sim.scene_id
     knobs = sim_knobs(sim)
     elevation_deg, azimuth_deg = knobs.elevation_deg, knobs.azimuth_deg
@@ -666,11 +710,6 @@ def write_scene(sim: Sim, out: Path) -> dict:
         "depth_path": f"depth/{scene_id}.npy",
         "seg_path": f"seg/{scene_id}.png",
     }
-    for path in [*rel.values(), f"scenes/{scene_id}.json"]:
-        (out / path).parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(rgb).save(out / rel["image_path"])
-    np.save(out / rel["depth_path"], depth)
-    Image.fromarray(seg, mode="L").save(out / rel["seg_path"])
 
     scene_objects = []
     for o in objects:
@@ -705,5 +744,85 @@ def write_scene(sim: Sim, out: Path) -> dict:
             "stacked": len({c["top"] for c in contacts if c["bottom"] != "table"}),
         },
     }
-    (out / f"scenes/{scene_id}.json").write_text(json.dumps(scene, indent=2) + "\n")
-    return scene
+    return scene, (rgb, depth, seg)
+
+
+def make_pair(sim: Sim, out: Path) -> dict:
+    """F10: write s_XXXXXXa (the scene as built) and s_XXXXXXb (one free object relocated).
+
+    The moved object has nothing resting on it and is >= 30% visible before. It is lifted to a free
+    spot in the spawn area 10-25 cm away (same tilt, random yaw) and everything settles. A placement
+    counts only if no other object moved more than 5 mm, the object ended >= 10 cm away and it is
+    >= 30% visible after. After PAIR_ATTEMPTS failed placements the scene is written unpaired.
+    Returns the a-scene (or the unpaired scene).
+    """
+    client, rng = sim.client, sim.rng
+    before, before_images = describe_scene(sim)
+    supporting = {c["bottom"] for c in before["contacts"]}
+    candidates = [o for o, d in zip(sim.objects, before["objects"])
+                  if o.id not in supporting and d["visible_frac"] >= PAIR_MIN_VISIBLE]
+    start = {o.body: p.getBasePositionAndOrientation(o.body, physicsClientId=client) for o in sim.objects}
+    state = p.saveState(physicsClientId=client)
+    try:
+        for _ in range(PAIR_ATTEMPTS if candidates else 0):
+            moved = candidates[rng.integers(len(candidates))]
+            spot = free_spot(sim, moved, rng)
+            if spot is not None and relocate_and_check(sim, moved, spot, start):
+                after, after_images = describe_scene(sim)
+                if next(d for d in after["objects"] if d["id"] == moved.id)["visible_frac"] >= PAIR_MIN_VISIBLE:
+                    a_id, b_id = f"{sim.scene_id}a", f"{sim.scene_id}b"
+                    pair = {"before": a_id, "after": b_id, "moved": [moved.id]}
+                    a = {**rename_scene(before, a_id), "pair": pair}
+                    save_scene(out, a, before_images)
+                    save_scene(out, {**rename_scene(after, b_id), "pair": pair}, after_images)
+                    return a
+            p.restoreState(stateId=state, physicsClientId=client)
+    finally:
+        p.removeState(state, physicsClientId=client)
+    print(f"note: {sim.scene_id} found no valid F10 placement; written unpaired", file=sys.stderr)
+    save_scene(out, before, before_images)
+    return before
+
+
+def footprint_m(client: int, body: int) -> tuple[float, float, float]:
+    """(x, y, radius) of a body's horizontal AABB footprint."""
+    lo, hi = p.getAABB(body, physicsClientId=client)
+    return (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, float(np.hypot(hi[0] - lo[0], hi[1] - lo[1])) / 2
+
+
+def free_spot(sim: Sim, moved: SceneObject, rng: np.random.Generator) -> tuple[float, float] | None:
+    """A spot 10-25 cm from the object, inside the spawn area, clear of every other object's footprint."""
+    x0, y0, r0 = footprint_m(sim.client, moved.body)
+    others = [footprint_m(sim.client, o.body) for o in sim.objects if o is not moved]
+    for _ in range(PAIR_SPOT_TRIES):
+        dist, angle = rng.uniform(*PAIR_MOVE_M), rng.uniform(0.0, 2 * np.pi)
+        x, y = x0 + dist * np.cos(angle), y0 + dist * np.sin(angle)
+        if abs(x) > SPAWN_HALF_X_M or abs(y) > SPAWN_HALF_Y_M:
+            continue
+        if all(np.hypot(x - ox, y - oy) > r0 + orad + 0.01 for ox, oy, orad in others):
+            return x, y
+    return None
+
+
+def relocate_and_check(sim: Sim, moved: SceneObject, spot: tuple[float, float], start: dict) -> bool:
+    """Lift the object to the spot (same tilt, random yaw), settle, and check only it moved."""
+    client = sim.client
+    xyz, quat = start[moved.body]
+    lo, _ = p.getAABB(moved.body, physicsClientId=client)
+    yaw = p.getQuaternionFromEuler([0.0, 0.0, float(sim.rng.uniform(-np.pi, np.pi))])
+    _, new_quat = p.multiplyTransforms([0, 0, 0], yaw, [0, 0, 0], quat)
+    lift = xyz[2] - lo[2]  # centre height above the object's lowest point
+    p.resetBasePositionAndOrientation(moved.body, [spot[0], spot[1], sim.top_z + lift + 0.005], new_quat,
+                                      physicsClientId=client)
+    p.resetBaseVelocity(moved.body, [0, 0, 0], [0, 0, 0], physicsClientId=client)
+    if not settle(sim):
+        return False
+    for o in sim.objects:
+        now = np.array(p.getBasePositionAndOrientation(o.body, physicsClientId=client)[0])
+        was = np.array(start[o.body][0])
+        if o is moved:
+            if now[2] < sim.top_z or np.hypot(*(now - was)[:2]) < PAIR_MOVE_M[0]:
+                return False
+        elif np.linalg.norm(now - was) > PAIR_OTHERS_MAX_M:
+            return False
+    return True

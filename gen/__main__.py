@@ -38,6 +38,8 @@ def main() -> None:
                     help="multiplier on object sizes")
     ap.add_argument("--stack-frac", type=float, nargs=2, metavar=("LO", "HI"), default=d["stack_frac"],
                     help="share of objects dropped onto an earlier box/cylinder")
+    ap.add_argument("--pair-frac", type=float, default=d["pair_frac"],
+                    help="share of scenes that also get an F10 after-scene (written as s_XXXXXXa/b)")
     args = ap.parse_args()
 
     for name, (lo, hi) in [("--n-objects", args.n_objects), ("--elevation", args.elevation),
@@ -51,6 +53,8 @@ def main() -> None:
         ap.error("--distractors must be >= 0")
     if not 0.0 <= args.stack_frac[0] <= args.stack_frac[1] <= 1.0:
         ap.error("--stack-frac must lie in 0..1")
+    if not 0.0 <= args.pair_frac <= 1.0:
+        ap.error("--pair-frac must lie in 0..1")
     if args.workers < 1:
         ap.error("--workers must be >= 1")
 
@@ -62,6 +66,7 @@ def main() -> None:
         "lighting": tuple(args.lighting),
         "scale": tuple(args.scale_range),
         "stack_frac": tuple(args.stack_frac),
+        "pair_frac": args.pair_frac,
     }
     try:
         scene.check_manifest(args.out, ranges)
