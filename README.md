@@ -2,7 +2,7 @@
 
 > **RoboSpatial-Synth:** procedurally rendered tabletop manipulation scenes with spatial questions (pointing, counting under occlusion, 3D relations, support, graspability, clearing order, counterfactuals, placement success, before/after change) whose answers come from simulator state. Used to evaluate Gemini Robotics-ER 2 against general frontier VLMs.
 >
-> Work split and contracts: [`AGENTS.md`](AGENTS.md). Decisions and log: [`context/handoff.md`](context/handoff.md). Why it matters: [`docs/application.md`](docs/application.md). What it doesn't show: [`docs/limitations.md`](docs/limitations.md).
+> Work split and contracts: [`AGENTS.md`](AGENTS.md). Decisions and log: [`context/handoff.md`](context/handoff.md). Why it matters: [`docs/application.md`](docs/application.md). What it doesn't show: [`docs/limitations.md`](docs/limitations.md). Pitch: [`docs/pitch.md`](docs/pitch.md).
 
 ## What it does
 
@@ -118,7 +118,7 @@ schema/     # B — JSON Schemas for the contracts (python -m schema.check --dat
 fixtures/   # B — hand-made scenes, tasks and fake results so nobody waits
 eval/       # C — model adapters, prompt, parser, cache, pricing
 report/     # D — breakdowns, charts, failure gallery
-docs/       # D — application, limitations
+docs/       # D — application, limitations, pitch talk track
 context/    # handoff notes and decisions
 ```
 
