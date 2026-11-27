@@ -1,0 +1,389 @@
+{
+  "scene_id": "s_000001",
+  "seed": 1,
+  "generator_version": "fixtures@hand-made-v1",
+  "image_path": "images/s_000001.png",
+  "depth_path": "depth/s_000001.npy",
+  "seg_path": "seg/s_000001.png",
+  "width": 1024,
+  "height": 768,
+  "camera": {
+    "view_matrix": [
+      0.866025,
+      -0.353553,
+      0.353553,
+      0.0,
+      0.5,
+      0.612372,
+      -0.612372,
+      0.0,
+      -0.0,
+      0.707107,
+      0.707107,
+      0.0,
+      -0.0,
+      -0.0,
+      -0.9,
+      1.0
+    ],
+    "proj_matrix": [
+      1.60838,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      2.144507,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      -1.033898,
+      -1.0,
+      0.0,
+      0.0,
+      -0.101695,
+      0.0
+    ],
+    "elevation_deg": 45.0,
+    "azimuth_deg": 30.0
+  },
+  "objects": [
+    {
+      "id": "o1",
+      "seg_id": 2,
+      "shape": "cylinder",
+      "color": "red",
+      "size_cm": [
+        6,
+        6,
+        10
+      ],
+      "pose": {
+        "xyz_m": [
+          -0.2,
+          0.02,
+          0.05
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "bbox_2d": [
+        337,
+        229,
+        400,
+        331
+      ],
+      "centroid_2d": [
+        369,
+        279
+      ],
+      "pixel_area": 5109,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.9476
+    },
+    {
+      "id": "o2",
+      "seg_id": 3,
+      "shape": "box",
+      "color": "blue",
+      "size_cm": [
+        8,
+        8,
+        6
+      ],
+      "pose": {
+        "xyz_m": [
+          -0.06,
+          0.03,
+          0.03
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.130526,
+          0.991445
+        ]
+      },
+      "bbox_2d": [
+        431,
+        280,
+        522,
+        379
+      ],
+      "centroid_2d": [
+        478,
+        329
+      ],
+      "pixel_area": 7178,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.9184
+    },
+    {
+      "id": "o3",
+      "seg_id": 4,
+      "shape": "cylinder",
+      "color": "red",
+      "size_cm": [
+        5,
+        5,
+        8
+      ],
+      "pose": {
+        "xyz_m": [
+          0.2,
+          0.03,
+          0.04
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "bbox_2d": [
+        670,
+        361,
+        734,
+        453
+      ],
+      "centroid_2d": [
+        701,
+        407
+      ],
+      "pixel_area": 4478,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.8194
+    },
+    {
+      "id": "o4",
+      "seg_id": 5,
+      "shape": "sphere",
+      "color": "green",
+      "size_cm": [
+        8,
+        8,
+        8
+      ],
+      "pose": {
+        "xyz_m": [
+          0.16,
+          -0.12,
+          0.04
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "bbox_2d": [
+        555,
+        452,
+        644,
+        542
+      ],
+      "centroid_2d": [
+        599,
+        497
+      ],
+      "pixel_area": 6351,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.7417
+    },
+    {
+      "id": "o5",
+      "seg_id": 6,
+      "shape": "box",
+      "color": "green",
+      "size_cm": [
+        5,
+        5,
+        5
+      ],
+      "pose": {
+        "xyz_m": [
+          -0.22,
+          -0.13,
+          0.025
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.34202,
+          0.939693
+        ]
+      },
+      "bbox_2d": [
+        242,
+        333,
+        301,
+        404
+      ],
+      "centroid_2d": [
+        272,
+        369
+      ],
+      "pixel_area": 3598,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.8805
+    },
+    {
+      "id": "o6",
+      "seg_id": 7,
+      "shape": "sphere",
+      "color": "yellow",
+      "size_cm": [
+        6,
+        6,
+        6
+      ],
+      "pose": {
+        "xyz_m": [
+          -0.02,
+          -0.14,
+          0.03
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "bbox_2d": [
+        391,
+        412,
+        452,
+        474
+      ],
+      "centroid_2d": [
+        422,
+        443
+      ],
+      "pixel_area": 3061,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.8001
+    },
+    {
+      "id": "o7",
+      "seg_id": 8,
+      "shape": "box",
+      "color": "purple",
+      "size_cm": [
+        10,
+        10,
+        12
+      ],
+      "pose": {
+        "xyz_m": [
+          0.04,
+          0.12,
+          0.06
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.258819,
+          0.965926
+        ]
+      },
+      "bbox_2d": [
+        548,
+        221,
+        653,
+        362
+      ],
+      "centroid_2d": [
+        598,
+        291
+      ],
+      "pixel_area": 13922,
+      "visible_frac": 1.0,
+      "depth_mean_m": 0.9169
+    },
+    {
+      "id": "o8",
+      "seg_id": 9,
+      "shape": "sphere",
+      "color": "orange",
+      "size_cm": [
+        4,
+        4,
+        4
+      ],
+      "pose": {
+        "xyz_m": [
+          -0.0025,
+          0.1936,
+          0.02
+        ],
+        "quat": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "bbox_2d": null,
+      "centroid_2d": null,
+      "pixel_area": 0,
+      "visible_frac": 0.0,
+      "depth_mean_m": null
+    }
+  ],
+  "contacts": [
+    {
+      "top": "o1",
+      "bottom": "table"
+    },
+    {
+      "top": "o2",
+      "bottom": "table"
+    },
+    {
+      "top": "o3",
+      "bottom": "table"
+    },
+    {
+      "top": "o4",
+      "bottom": "table"
+    },
+    {
+      "top": "o5",
+      "bottom": "table"
+    },
+    {
+      "top": "o6",
+      "bottom": "table"
+    },
+    {
+      "top": "o7",
+      "bottom": "table"
+    },
+    {
+      "top": "o8",
+      "bottom": "table"
+    }
+  ],
+  "occludes": [
+    {
+      "front": "o7",
+      "back": "o8",
+      "frac": 1.0
+    }
+  ],
+  "counterfactuals": {},
+  "pair": null,
+  "difficulty": {
+    "n_objects": 8,
+    "occlusion": 1.0,
+    "distractors": 3,
+    "lighting": "normal"
+  }
+}

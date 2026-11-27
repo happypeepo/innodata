@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "scene.schema.json",
+  "title": "scene.json (A -> B), contract v1",
+  "description": "One file per scene in <data>/scenes/<scene_id>.json. Paths are relative to the data folder. Pixel coordinates are [x, y], origin top-left.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scene_id", "seed", "generator_version", "image_path", "depth_path", "seg_path",
+               "width", "height", "camera", "objects", "contacts", "occludes", "counterfactuals",
+               "pair", "difficulty"],
+  "properties": {
+    "scene_id": {"type": "string", "pattern": "^s_[0-9]{6}[a-z]?$", "description": "s_{seed:06d}; F10 pairs add a/b."},
+    "seed": {"type": "integer", "minimum": 0},
+    "generator_version": {"type": "string", "minLength": 1},
+    "image_path": {"type": "string", "pattern": "^images/[^/]+\\.png$"},
+    "depth_path": {"type": "string", "pattern": "^depth/[^/]+\\.npy$"},
+    "seg_path": {"type": "string", "pattern": "^seg/[^/]+\\.png$"},
+    "width": {"const": 1024},
+    "height": {"const": 768},
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["view_matrix", "proj_matrix", "elevation_deg", "azimuth_deg"],
+      "properties": {
+        "view_matrix": {"$ref": "#/$defs/mat16"},
+        "proj_matrix": {"$ref": "#/$defs/mat16"},
+        "elevation_deg": {"type": "number"},
+        "azimuth_deg": {"type": "number"}
+      }
+    },
+    "objects": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/object"}},
+    "contacts": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["top", "bottom"],
+        "properties": {"top": {"$ref": "#/$defs/obj_id"}, "bottom": {"$ref": "#/$defs/obj_or_table"}}
+      }
+    },
+    "occludes": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["front", "back", "frac"],
+        "properties": {
+          "front": {"$ref": "#/$defs/obj_id"},
+          "back": {"$ref": "#/$defs/obj_id"},
+          "frac": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "counterfactuals": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/obj_id"},
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false, "required": ["moved"],
+        "properties": {"moved": {"type": "array", "items": {"$ref": "#/$defs/obj_id"}, "uniqueItems": true}}
+      }
+    },
+    "pair": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false, "required": ["before", "after", "moved"],
+          "properties": {
+            "before": {"type": "string", "pattern": "^s_[0-9]{6}[a-z]?$"},
+            "after": {"type": "string", "pattern": "^s_[0-9]{6}[a-z]?$"},
+            "moved": {"type": "array", "items": {"$ref": "#/$defs/obj_id"}, "minItems": 1}
+          }
+        }
+      ]
+    },
+    "goal": {
+      "type": "object", "additionalProperties": false, "required": ["object", "relation", "target", "success"],
+      "properties": {
+        "object": {"$ref": "#/$defs/obj_id"},
+        "relation": {"type": "string", "minLength": 1},
+        "target": {"$ref": "#/$defs/obj_or_table"},
+        "success": {"type": "boolean"}
+      }
+    },
+    "difficulty": {
+      "type": "object",
+      "required": ["n_objects", "occlusion", "distractors"],
+      "properties": {
+        "n_objects": {"type": "integer", "minimum": 1, "maximum": 20},
+        "occlusion": {"type": "number", "minimum": 0, "maximum": 1},
+        "distractors": {"type": "integer", "minimum": 0},
+        "lighting": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "mat16": {"type": "array", "items": {"type": "number"}, "minItems": 16, "maxItems": 16},
+    "obj_id": {"type": "string", "pattern": "^o[0-9]+$"},
+    "obj_or_table": {"oneOf": [{"$ref": "#/$defs/obj_id"}, {"const": "table"}]},
+    "xy": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+    "object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "seg_id", "shape", "color", "size_cm", "pose", "bbox_2d", "centroid_2d",
+                   "pixel_area", "visible_frac", "depth_mean_m"],
+      "properties": {
+        "id": {"$ref": "#/$defs/obj_id"},
+        "seg_id": {"type": "integer", "minimum": 2, "maximum": 255, "description": "0 = nothing/floor, 1 = table, objects from 2."},
+        "shape": {"enum": ["box", "cylinder", "sphere"]},
+        "color": {"enum": ["red", "green", "blue", "yellow", "orange", "purple"]},
+        "size_cm": {"type": "array", "items": {"type": "number", "exclusiveMinimum": 0}, "minItems": 3, "maxItems": 3},
+        "pose": {
+          "type": "object", "additionalProperties": false, "required": ["xyz_m", "quat"],
+          "properties": {
+            "xyz_m": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
+            "quat": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4}
+          }
+        },
+        "bbox_2d": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4, "description": "[x1, y1, x2, y2] pixels"}
+          ]
+        },
+        "centroid_2d": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/xy"}]},
+        "pixel_area": {"type": "integer", "minimum": 0},
+        "visible_frac": {"type": "number", "minimum": 0, "maximum": 1},
+        "depth_mean_m": {"oneOf": [{"type": "null"}, {"type": "number", "exclusiveMinimum": 0}]}
+      }
+    }
+  }
+}
