@@ -269,9 +269,16 @@ Role A owns and fills `counterfactuals` (F8), `goal` (F9) and `pair` (F10) in `s
     - B's `python -m tasks` makes 69 F10 tasks from real data (was 0; 21 pairs rejected by B as "not describable as an option").
     - The run took 1,077 s, over the ~15 min target, but the load average was 150–180 at the time. **Re-time on a quiet machine.** If it is still over, the after-scenes' counterfactuals could be skipped (B makes only F10 tasks from `b` scenes).
 
-- [ ] **8.3 F9 goal scenes.** A scripted placement that succeeds or fails; the label comes from re-simulating. [AGENTS] Format: `goal: {"object", "relation", "target", "success"}`.
+- [x] **8.3 F9 goal scenes.** A scripted placement that succeeds or fails; the label comes from re-simulating. [AGENTS] Format: `goal: {"object", "relation", "target", "success"}`.
   - Before coding: [decide] which relations (only `"on"`?); how failures are produced (an offset drop, a sphere on a sphere, …); the success/failure balance; which scenes get a goal.
   - Done when: `goal` passes `schema.check`; each `success` matches the contact graph after settling; the success/failure split is near the chosen balance.
+  - Decisions (Decisions table): `--goal-frac` 0.33, sharing the pair draw (pair / goal / plain are exclusive). A free object is dropped `"on"` a flat-topped free object (a box or an upright cylinder; never the table), with centre/edge aims 50/50. Success = it rests on the target and not on the table. Resting on the target plus other objects is discarded as ambiguous. Both objects must be ≥ 30% visible.
+  - Result (2026-11-28):
+    - 300 seeds → 99 goal scenes, 51 successes and 48 failures (52%). Every label matches the settled contacts, and no ambiguous placements were kept. 1 scene found no valid placement.
+    - Plain and pair scenes are byte-identical to the pre-goal output.
+    - `schema.check` and `gen.check` pass 390/390, and a 30-scene re-run is byte-identical.
+    - B's `python -m tasks` makes 69 F9 tasks from real data (was 0; 30 rejected by B's visibility/uniqueness rules).
+    - Timing: wall clock was 9.6 h because the Mac slept with the lid closed. CPU time was 6,699 s user, ≈ 14 min over 8 workers, right at the ~15 min target. **Re-time awake and on power.** If it is over, skip counterfactuals on `b` scenes first.
 
 - [ ] **8.4 Regenerate and hand off.** Regenerate the 300 scenes; check that `schema.check` and `gen.check` pass and that B's `python -m tasks --data data/` produces F8/F9/F10 tasks. Commit, add a log line, open a PR.
 
